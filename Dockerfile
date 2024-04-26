@@ -20,4 +20,5 @@ COPY --from=builder /srv .
 
 USER go
 
+EXPOSE "8080"
 ENTRYPOINT ["./bot"]

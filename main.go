@@ -1,52 +1,48 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/gempir/go-twitch-irc/v3"
+	"github.com/gempir/go-twitch-irc/v4"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/clientcredentials"
-	otwitch "golang.org/x/oauth2/twitch"
 )
 
 var log *logrus.Logger
 
 func init() {
 	log = logrus.New()
-	if level := os.Getenv("LOG_LEVEL"); level != "" {
+	if level := strings.TrimSpace(os.Getenv("LOG_LEVEL")); level != "" {
+		log.Infof("Trying to set log level to %q", level)
 		l, err := logrus.ParseLevel(level)
 		if err != nil {
-			log.SetLevel(l)
+			log.Infof("Invalid log level %q", level)
+			return
 		}
-	}
-}
 
-func getToken() (*oauth2.Token, error) {
-	oauth2Config := &clientcredentials.Config{
-		ClientID:     os.Getenv("TWITCH_CLIENT_ID"),
-		ClientSecret: os.Getenv("TWITCH_CLIENT_SECRET"),
-		TokenURL:     otwitch.Endpoint.TokenURL,
+		log.SetLevel(l)
 	}
-
-	log.Debugln(oauth2Config)
-	return oauth2Config.Token(context.Background())
 }
 
 func main() {
 	token := os.Getenv("TWITCH_TOKEN")
-	if token == "" {
-		t, err := getToken()
+	refresh := os.Getenv("TWITCH_REFRESH")
+	expires := os.Getenv("TWITCH_EXPIRES")
+
+	if token == "" || refresh == "" || expires == "" {
+		creds, err := getToken()
 		if err != nil {
 			log.Debugln("unable to get access token")
 			panic(err)
 		}
 
-		token = t.AccessToken
+		log.Debugf("%#v", creds)
+
+		token, refresh, expires = creds.get()
 	}
+
 	user := os.Getenv("TWITCH_USER")
 	if user == "" {
 		log.Fatalf("expected a user, set TWITCH_USER environment variable")
@@ -58,27 +54,25 @@ func main() {
 		log.Debugf("notice message: %#v", message)
 	})
 
+	go doRefresh(client, refresh, expires)
+
 	lastMention := time.Now()
+
 	client.OnPrivateMessage(func(message twitch.PrivateMessage) {
-		log.Debugln(message.Channel, message.Message)
-		if strings.Contains(strings.ToLower(message.Message), "batjam") {
-			log.Debugln(message.Channel, message.User.Name, message.Message)
+		log.Debugln(message.Channel, message.User.Name, message.Message)
+
+		msg := strings.ToLower(message.Message)
+		switch {
+		case strings.Contains(msg, "batjam"):
 			client.Say(message.Channel, "BatJAM BatJAM BatJAM")
-		}
-
-		if strings.Contains(strings.ToLower(message.Message), "batpop") {
-			log.Debugln(message.Channel, message.User.Name, message.Message)
+		case strings.Contains(msg, "batpop"):
 			client.Say(message.Channel, "BatPop BatPop BatPop")
-		}
-
-		if strings.HasSuffix(strings.ToLower(message.Message), "batg") {
-			log.Debugln(message.Channel, message.User.Name, message.Message)
+		case strings.HasSuffix(msg, "batg"):
 			client.Say(message.Channel, "very interesting BatG")
 		}
 
-		if strings.Contains(strings.ToLower(message.Message), "batybot") && time.Now().Sub(lastMention) > 5*time.Minute {
+		if strings.Contains(strings.ToLower(message.Message), "batybot") && time.Since(lastMention) > 5*time.Minute {
 			lastMention = time.Now()
-			log.Debugln(message.Channel, message.User.Name, message.Message)
 			client.Say(message.Channel, "What? No, I'm awake BatPls")
 		}
 	})
@@ -92,7 +86,7 @@ func main() {
 	})
 
 	client.OnConnect(func() {
-		log.Debug("connected")
+		log.Info("connected")
 	})
 
 	channel := os.Getenv("TWITCH_CHANNEL")
@@ -102,9 +96,41 @@ func main() {
 	}
 
 	client.Join(channel)
-	err := client.Connect()
-	if err != nil {
+
+	if err := client.Connect(); err != nil {
 		log.Errorf("unable to connect %#v", token)
 		panic(err)
+	}
+}
+
+// This isn't working to keep the token valid
+func doRefresh(client *twitch.Client, refresh, expires string) {
+	for {
+		expiresAt, err := time.Parse(time.RFC3339Nano, expires)
+		if err != nil {
+			panic(fmt.Errorf("unable to parse expires time: %w", err))
+		} else if time.Now().After(expiresAt) {
+			panic(fmt.Errorf("refresh token %s is already expired", expiresAt))
+		}
+
+		const early = 400
+		until := time.Until(expiresAt) / early
+		log.Debugf("Waiting %v before refreshing token that expires %s", until, expires)
+		time.Sleep(until)
+
+		creds, err := refreshToken(refresh)
+		if err != nil {
+			panic(err)
+		}
+
+		var token string
+		token, refresh, expires = creds.get()
+		client.SetIRCToken(token)
+
+		err = client.Connect()
+		if err != nil {
+			log.Errorf("unable to connect %#v", token)
+			panic(err)
+		}
 	}
 }
