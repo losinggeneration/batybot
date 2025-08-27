@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Batybot OAuth Setup</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0f0f23;
+            color: #cccccc;
+        }
+        .container {
+            background: #1a1a2e;
+            padding: 30px;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        h1 {
+            color: #9146ff;
+            text-align: center;
+        }
+        .auth-btn {
+            display: inline-block;
+            background: #9146ff;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            text-align: center;
+            margin: 20px auto;
+            display: block;
+            width: 200px;
+        }
+        .auth-btn:hover {
+            background: #772ce8;
+        }
+        .info {
+            background: #2a2a3e;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            border-left: 4px solid #9146ff;
+        }
+        code {
+            background: #2a2a3e;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🦇 Batybot OAuth Setup</h1>
+
+        <div class="info">
+            <h3>Welcome to Batybot Setup!</h3>
+            <p>To get started, you need to authorize Batybot to access your Twitch account. This will allow the bot to:</p>
+            <ul>
+                <li>Read and send chat messages</li>
+                <li>Read and send whispers</li>
+            </ul>
+            <p><strong>Note:</strong> Make sure you have set the following environment variables:</p>
+            <ul>
+                <li><code>TWITCH_CLIENT_ID</code> - Your Twitch application client ID</li>
+                <li><code>TWITCH_CLIENT_SECRET</code> - Your Twitch application client secret</li>
+                <li><code>TWITCH_USER</code> - The username the bot will use</li>
+                <li><code>TWITCH_CHANNEL</code> - The channel the bot will join</li>
+            </ul>
+        </div>
+
+        <a href="{{.AuthURL}}" class="auth-btn">🔗 Authorize with Twitch</a>
+
+        <div class="info">
+            <p><strong>What happens next?</strong></p>
+            <ol>
+                <li>Click the authorize button above</li>
+                <li>Log in to Twitch and authorize the application</li>
+                <li>You'll be redirected back here with your tokens</li>
+                <li>The bot will automatically start and connect to chat!</li>
+            </ol>
+        </div>
+    </div>
+</body>
+</html>
+

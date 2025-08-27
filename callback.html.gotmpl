@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Batybot - Authorization Complete</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0f0f23;
+            color: #cccccc;
+        }
+        .container {
+            background: #1a1a2e;
+            padding: 30px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            text-align: center;
+        }
+        h1 {
+            color: #00ff00;
+        }
+        .success {
+            background: #2a4a2a;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            border-left: 4px solid #00ff00;
+        }
+        .token-info {
+            background: #2a2a3e;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        code {
+            background: #1a1a1a;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>✅ Authorization Successful!</h1>
+
+        <div class="success">
+            <h3>Batybot is now authorized and connecting...</h3>
+            <p>The bot should now be starting up and connecting to Twitch chat. Check your console for connection status.</p>
+        </div>
+
+        <div class="token-info">
+            <h3>Token Information (for your records):</h3>
+            <p><strong>Expires:</strong> {{.Expires}}</p>
+            <p><strong>Scopes:</strong> chat:edit, chat:read, whispers:read, whispers:edit</p>
+
+            <h4>Environment Variables (save these for future runs):</h4>
+            <p><code>TWITCH_TOKEN={{.Token}}</code></p>
+            <p><code>TWITCH_REFRESH={{.Refresh}}</code></p>
+            <p><code>TWITCH_EXPIRES={{.ExpiresRaw}}</code></p>
+        </div>
+
+        <p><em>You can safely close this tab now. The bot will continue running in the background.</em></p>
+    </div>
+</body>
+</html>

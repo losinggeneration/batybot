@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
+	"embed"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"time"
@@ -14,41 +17,133 @@ type Token struct{ helix.AccessCredentials }
 
 type server struct {
 	http.Server
-
+	mux    *http.ServeMux
 	listen string
 	code   string
+	done   chan bool
 }
+
+//go:embed index.html.gotmpl callback.html.gotmpl
+var embedFS embed.FS
+
+var indexTemplate, callbackTemplate string
 
 var (
 	listen   = ":8080"
-	redirect = fmt.Sprintf("http://localhost%s", listen)
+	redirect = fmt.Sprintf("http://localhost%s/callback", listen)
 )
 
 func init() {
+	if b, err := embedFS.ReadFile("index.html.gotmpl"); err != nil {
+		panic(err)
+	} else {
+		indexTemplate = string(b)
+	}
+
+	if b, err := embedFS.ReadFile("callback.html.gotmpl"); err != nil {
+		panic(err)
+	} else {
+		callbackTemplate = string(b)
+	}
+
 	if vhost := os.Getenv("VIRTUAL_HOST"); vhost != "" {
-		redirect = fmt.Sprintf("https://%s", vhost)
+		redirect = fmt.Sprintf("https://%s/callback", vhost)
 	}
 }
 
-func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	s.code = q.Get("code") // scope is also available, but I don't think it's needed
+func (s *server) setupRoutes(authURL string) {
+	s.mux = http.NewServeMux()
 
-	_, err := fmt.Fprint(w, "Authorization received! You can close this tab.")
-	if err != nil {
-		fmt.Printf("Unable to write response to browser: %s\n", err)
-	}
+	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		tmpl := template.Must(template.New("index").Parse(indexTemplate))
+		data := struct {
+			AuthURL string
+		}{
+			AuthURL: authURL,
+		}
 
-	if err := s.Shutdown(r.Context()); err != nil {
-		fmt.Printf("Unable to shutdown http server: %s\n", err)
-	}
+		if err := tmpl.Execute(w, data); err != nil {
+			fmt.Printf("Unable to write response: %s\n", err)
+		}
+	})
+
+	s.mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+
+		if errMsg := q.Get("error"); errMsg != "" {
+			http.Error(w, fmt.Sprintf("Authorization failed: %s - %s", errMsg, q.Get("error_description")), http.StatusBadRequest)
+			return
+		}
+
+		s.code = q.Get("code")
+		if s.code == "" {
+			http.Error(w, "No authorization code received", http.StatusBadRequest)
+			return
+		}
+
+		token, err := getUserToken(s.code)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get access token: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		tokenStr, refresh, expires := token.get()
+
+		if err := os.Setenv("TWITCH_TOKEN", tokenStr); err != nil {
+			fmt.Printf("Unable to set environment variable %q: %s", "TWITCH_TOKEN", err)
+		}
+		if err := os.Setenv("TWITCH_REFRESH", refresh); err != nil {
+			fmt.Printf("Unable to set environment variable %q: %s", "TWITCH_REFRESH", err)
+		}
+		if err := os.Setenv("TWITCH_EXPIRES", expires); err != nil {
+			fmt.Printf("Unable to set environment variable %q: %s", "TWITCH_EXPIRES", err)
+		}
+
+		tmpl := template.Must(template.New("callback").Parse(callbackTemplate))
+		data := struct {
+			Token      string
+			Refresh    string
+			Expires    string
+			ExpiresRaw string
+		}{
+			Token:      tokenStr,
+			Refresh:    refresh,
+			Expires:    time.Now().Add(time.Hour).Format("January 2, 2006 at 3:04 PM MST"),
+			ExpiresRaw: expires,
+		}
+
+		if err := tmpl.Execute(w, data); err != nil {
+			fmt.Printf("Unable to write response: %s\n", err)
+		}
+
+		go func() {
+			time.Sleep(2 * time.Second) // Give time for the response to be sent
+			s.done <- true
+		}()
+	})
+
+	s.Handler = s.mux
 }
 
 func (s *server) Start() error {
 	s.Addr = s.listen
-	s.Handler = s
+	s.done = make(chan bool, 1)
 
-	return fmt.Errorf("unable to start server: %w", s.ListenAndServe())
+	go func() {
+		if err := s.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Errorf("Server error: %v", err)
+		}
+	}()
+
+	log.Infof("OAuth server started at http://localhost%s", s.listen)
+	log.Infof("Open your browser and navigate to http://localhost%s to authorize the bot", s.listen)
+
+	<-s.done
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return s.Shutdown(ctx)
 }
 
 func (t Token) get() (token, refresh, expires string) {
@@ -73,17 +168,17 @@ func authCode() (string, error) {
 		return "", fmt.Errorf("authCode: unable to set up client: %w", err)
 	}
 
-	url := client.GetAuthorizationURL(&helix.AuthorizationURLParams{
+	authURL := client.GetAuthorizationURL(&helix.AuthorizationURLParams{
 		ResponseType: "code",
 		Scopes:       []string{"chat:edit", "chat:read", "whispers:read", "whispers:edit"},
 	})
 
-	log.Infof("Please visit this URL to authorize the application: %s", url)
-
 	s := server{
 		listen: listen,
 	}
-	if err := s.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	s.setupRoutes(authURL)
+
+	if err := s.Start(); err != nil {
 		return "", fmt.Errorf("authCode: unable to start server: %w", err)
 	}
 

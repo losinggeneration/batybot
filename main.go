@@ -26,20 +26,31 @@ func init() {
 }
 
 func main() {
+	requiredEnvVars := []string{"TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_USER", "TWITCH_CHANNEL"}
+	for _, envVar := range requiredEnvVars {
+		if os.Getenv(envVar) == "" {
+			log.Fatalf("Required environment variable %s is not set", envVar)
+		}
+	}
+
 	token := os.Getenv("TWITCH_TOKEN")
 	refresh := os.Getenv("TWITCH_REFRESH")
 	expires := os.Getenv("TWITCH_EXPIRES")
 
 	if token == "" || refresh == "" || expires == "" {
+		log.Info("No valid tokens found, starting OAuth flow...")
+		log.Info("Please open your browser and navigate to http://localhost:8080 to authorize the bot")
+
 		creds, err := getToken()
 		if err != nil {
-			log.Debugln("unable to get access token")
+			log.Errorf("unable to get access token: %v", err)
 			panic(err)
 		}
 
-		log.Debugf("%#v", creds)
-
+		log.Info("Authorization successful! Bot is starting...")
 		token, refresh, expires = creds.get()
+	} else {
+		log.Info("Using existing tokens")
 	}
 
 	user := os.Getenv("TWITCH_USER")
