@@ -63,7 +63,7 @@ func (s *server) setupRoutes(authURL string) {
 		}
 
 		if err := tmpl.Execute(w, data); err != nil {
-			fmt.Printf("Unable to write response: %s\n", err)
+			log.Errorf("Unable to write response: %s\n", err)
 		}
 	})
 
@@ -90,13 +90,13 @@ func (s *server) setupRoutes(authURL string) {
 		tokenStr, refresh, expires := token.get()
 
 		if err := os.Setenv("TWITCH_TOKEN", tokenStr); err != nil {
-			fmt.Printf("Unable to set environment variable %q: %s", "TWITCH_TOKEN", err)
+			log.Errorf("Unable to set environment variable %q: %s", "TWITCH_TOKEN", err)
 		}
 		if err := os.Setenv("TWITCH_REFRESH", refresh); err != nil {
-			fmt.Printf("Unable to set environment variable %q: %s", "TWITCH_REFRESH", err)
+			log.Errorf("Unable to set environment variable %q: %s", "TWITCH_REFRESH", err)
 		}
 		if err := os.Setenv("TWITCH_EXPIRES", expires); err != nil {
-			fmt.Printf("Unable to set environment variable %q: %s", "TWITCH_EXPIRES", err)
+			log.Errorf("Unable to set environment variable %q: %s", "TWITCH_EXPIRES", err)
 		}
 
 		tmpl := template.Must(template.New("callback").Parse(callbackTemplate))
@@ -113,7 +113,7 @@ func (s *server) setupRoutes(authURL string) {
 		}
 
 		if err := tmpl.Execute(w, data); err != nil {
-			fmt.Printf("Unable to write response: %s\n", err)
+			log.Errorf("Unable to write response: %s\n", err)
 		}
 
 		go func() {
