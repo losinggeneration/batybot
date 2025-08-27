@@ -3,25 +3,16 @@ package main
 import (
 	"context"
 	"embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/nicklaw5/helix/v2"
 )
 
 type Token struct{ helix.AccessCredentials }
-
-type TokenStore struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	ExpiresAt    time.Time `json:"expires_at"`
-}
 
 type server struct {
 	http.Server
@@ -36,12 +27,6 @@ var embedFS embed.FS
 
 var indexTemplate, callbackTemplate string
 
-var (
-	listen    = ":8080"
-	redirect  = fmt.Sprintf("http://localhost%s/callback", listen)
-	tokenFile = "tokens.json" // File to persist tokens
-)
-
 func init() {
 	if b, err := embedFS.ReadFile("index.html.gotmpl"); err != nil {
 		panic(err)
@@ -54,73 +39,6 @@ func init() {
 	} else {
 		callbackTemplate = string(b)
 	}
-
-	if vhost := os.Getenv("VIRTUAL_HOST"); vhost != "" {
-		redirect = fmt.Sprintf("https://%s/callback", vhost)
-	}
-
-	if port := os.Getenv("OAUTH_PORT"); port != "" {
-		listen = ":" + port
-		if vhost := os.Getenv("VIRTUAL_HOST"); vhost == "" {
-			redirect = fmt.Sprintf("http://localhost:%s/callback", port)
-		}
-	}
-}
-
-// loadTokensFromFile attempts to load tokens from a file
-func loadTokensFromFile() (token, refresh, expires string, err error) {
-	data, err := os.ReadFile(tokenFile)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	var store TokenStore
-	if err := json.Unmarshal(data, &store); err != nil {
-		return "", "", "", err
-	}
-
-	if time.Now().After(store.ExpiresAt.Add(-10 * time.Minute)) {
-		return "", "", "", fmt.Errorf("stored token is expired")
-	}
-
-	token = store.AccessToken
-	refresh = store.RefreshToken
-	expires = store.ExpiresAt.Format(time.RFC3339Nano)
-
-	log.Info("Loaded tokens from file")
-	return token, refresh, expires, nil
-}
-
-// saveTokensToFile saves tokens to a file for persistence
-func saveTokensToFile(token, refresh, expires string) error {
-	expiresAt, err := time.Parse(time.RFC3339Nano, expires)
-	if err != nil {
-		return err
-	}
-
-	store := TokenStore{
-		AccessToken:  token,
-		RefreshToken: refresh,
-		ExpiresAt:    expiresAt,
-	}
-
-	data, err := json.MarshalIndent(store, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	if dir := filepath.Dir(tokenFile); dir != "." {
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			return err
-		}
-	}
-
-	if err := os.WriteFile(tokenFile, data, 0600); err != nil {
-		return err
-	}
-
-	log.Info("Tokens saved to file")
-	return nil
 }
 
 func (s *server) setupRoutes(authURL string) {
@@ -161,7 +79,8 @@ func (s *server) setupRoutes(authURL string) {
 			return
 		}
 
-		token, err := getUserToken(s.code)
+		config := GetConfig()
+		token, err := getUserToken(config, s.code)
 		if err != nil {
 			log.Errorf("Failed to get access token: %v", err)
 			http.Error(w, fmt.Sprintf("Failed to get access token: %v", err), http.StatusInternalServerError)
@@ -170,23 +89,10 @@ func (s *server) setupRoutes(authURL string) {
 
 		tokenStr, refresh, expires := token.get()
 
-		if err := os.Setenv("TWITCH_TOKEN", tokenStr); err != nil {
-			log.Errorf("Unable to set environment variable %q: %s", "TWITCH_TOKEN", err)
-		}
-		if err := os.Setenv("TWITCH_REFRESH", refresh); err != nil {
-			log.Errorf("Unable to set environment variable %q: %s", "TWITCH_REFRESH", err)
-		}
-		if err := os.Setenv("TWITCH_EXPIRES", expires); err != nil {
-			log.Errorf("Unable to set environment variable %q: %s", "TWITCH_EXPIRES", err)
-		}
-
-		if err := saveTokensToFile(tokenStr, refresh, expires); err != nil {
-			log.Warnf("Failed to save tokens to file: %v", err)
-		}
+		expiresAt := parseExpiresTime(expires)
+		config.SetTokens(tokenStr, refresh, expiresAt)
 
 		tmpl := template.Must(template.New("callback").Parse(callbackTemplate))
-
-		expiresAt, _ := time.Parse(time.RFC3339Nano, expires)
 		data := struct {
 			Token      string
 			Refresh    string
@@ -241,18 +147,21 @@ func (t Token) get() (token, refresh, expires string) {
 	return token, refresh, expires
 }
 
-func authCode() (string, error) {
-	clientID := os.Getenv("TWITCH_CLIENT_ID")
-	if clientID == "" {
-		return "", fmt.Errorf("TWITCH_CLIENT_ID environment variable is required")
+func performOAuthFlow(config *ConfigManager) error {
+	twitchConfig := config.Twitch()
+	serverConfig := config.Server()
+
+	redirect := fmt.Sprintf("http://localhost:%s/callback", serverConfig.OAuthPort)
+	if serverConfig.VirtualHost != "" {
+		redirect = fmt.Sprintf("https://%s/callback", serverConfig.VirtualHost)
 	}
 
 	client, err := helix.NewClient(&helix.Options{
-		ClientID:    clientID,
+		ClientID:    twitchConfig.ClientID,
 		RedirectURI: redirect,
 	})
 	if err != nil {
-		return "", fmt.Errorf("authCode: unable to set up client: %w", err)
+		return fmt.Errorf("unable to set up helix client: %w", err)
 	}
 
 	authURL := client.GetAuthorizationURL(&helix.AuthorizationURLParams{
@@ -261,32 +170,33 @@ func authCode() (string, error) {
 	})
 
 	s := server{
-		listen: listen,
+		listen: ":" + serverConfig.OAuthPort,
 	}
 	s.setupRoutes(authURL)
 
 	if err := s.Start(); err != nil {
-		return "", fmt.Errorf("authCode: unable to start server: %w", err)
+		return fmt.Errorf("unable to start OAuth server: %w", err)
 	}
 
 	if s.code == "" {
-		return "", fmt.Errorf("no authorization code received")
+		return fmt.Errorf("no authorization code received")
 	}
 
-	return s.code, nil
+	return nil
 }
 
-func getUserToken(code string) (*Token, error) {
-	clientID := os.Getenv("TWITCH_CLIENT_ID")
-	clientSecret := os.Getenv("TWITCH_CLIENT_SECRET")
+func getUserToken(config *ConfigManager, code string) (*Token, error) {
+	twitchConfig := config.Twitch()
+	serverConfig := config.Server()
 
-	if clientID == "" || clientSecret == "" {
-		return nil, fmt.Errorf("TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET environment variables are required")
+	redirect := fmt.Sprintf("http://localhost:%s/callback", serverConfig.OAuthPort)
+	if serverConfig.VirtualHost != "" {
+		redirect = fmt.Sprintf("https://%s/callback", serverConfig.VirtualHost)
 	}
 
 	client, err := helix.NewClient(&helix.Options{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
+		ClientID:     twitchConfig.ClientID,
+		ClientSecret: twitchConfig.ClientSecret,
 		RedirectURI:  redirect,
 	})
 	if err != nil {
@@ -303,67 +213,20 @@ func getUserToken(code string) (*Token, error) {
 	return &Token{r.Data}, nil
 }
 
-// getToken tries token file first, then OAuth
-func getToken() (*Token, error) {
-	if token, refresh, expires, err := loadTokensFromFile(); err == nil {
-		log.Info("Using tokens from file")
-
-		if err := os.Setenv("TWITCH_TOKEN", token); err != nil {
-			return nil, err
-		}
-		if err := os.Setenv("TWITCH_REFRESH", refresh); err != nil {
-			return nil, err
-		}
-		if err := os.Setenv("TWITCH_EXPIRES", expires); err != nil {
-			return nil, err
-		}
-
-		expiresAt, _ := time.Parse(time.RFC3339Nano, expires)
-		expiresIn := int(time.Until(expiresAt).Seconds())
-
-		return &Token{
-			helix.AccessCredentials{
-				AccessToken:  token,
-				RefreshToken: refresh,
-				ExpiresIn:    expiresIn,
-			},
-		}, nil
-	}
-
-	log.Info("No valid token file found, starting OAuth flow")
-
-	code, err := authCode()
-	if err != nil {
-		return nil, fmt.Errorf("getToken: unable to get auth code: %w", err)
-	}
-
-	token, err := getUserToken(code)
-	if err != nil {
-		return nil, fmt.Errorf("getToken: unable to get user token: %w", err)
-	}
-
-	return token, nil
-}
-
-func refreshToken(refresh string) (*Token, error) {
-	clientID := os.Getenv("TWITCH_CLIENT_ID")
-	clientSecret := os.Getenv("TWITCH_CLIENT_SECRET")
-
-	if clientID == "" || clientSecret == "" {
-		return nil, fmt.Errorf("TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET environment variables are required")
-	}
+func refreshTokens(config *ConfigManager, refreshToken string) (*Token, error) {
+	twitchConfig := config.Twitch()
 
 	client, err := helix.NewClient(&helix.Options{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
+		ClientID:     twitchConfig.ClientID,
+		ClientSecret: twitchConfig.ClientSecret,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("refreshToken: unable to set up client: %w", err)
 	}
 
-	log.Debugf("Attempting to refresh token with refresh token: %s...", refresh[:min(len(refresh), 10)])
+	log.Debugf("Attempting to refresh token with refresh token: %s...", refreshToken[:min(len(refreshToken), 10)])
 
-	r, err := client.RefreshUserAccessToken(refresh)
+	r, err := client.RefreshUserAccessToken(refreshToken)
 	if err != nil {
 		return nil, fmt.Errorf("refreshToken: unable to refresh token: %w", err)
 	} else if r.ErrorStatus != 0 {
@@ -371,14 +234,16 @@ func refreshToken(refresh string) (*Token, error) {
 	}
 
 	log.Debug("Token refresh successful")
+	return &Token{r.Data}, nil
+}
 
-	token := &Token{r.Data}
-	tokenStr, refreshStr, expires := token.get()
-	if err := saveTokensToFile(tokenStr, refreshStr, expires); err != nil {
-		log.Warnf("Failed to update saved tokens: %v", err)
+func parseExpiresTime(expires string) time.Time {
+	t, err := time.Parse(time.RFC3339Nano, expires)
+	if err != nil {
+		log.Errorf("Failed to parse expires time: %v", err)
+		return time.Now().Add(time.Hour) // Fallback to 1 hour from now
 	}
-
-	return token, nil
+	return t
 }
 
 func min(a, b int) int {

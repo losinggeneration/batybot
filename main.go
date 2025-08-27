@@ -16,57 +16,45 @@ import (
 
 var log *logrus.Logger
 
-func init() {
+func main() {
 	log = logrus.New()
-	if level := strings.TrimSpace(os.Getenv("LOG_LEVEL")); level != "" {
-		log.Infof("Trying to set log level to %q", level)
+	config, err := InitConfig()
+	if err != nil {
+		log.Fatalf("Failed to initialize configuration: %v", err)
+	}
+
+	if level := config.Logging().Level; level != "" {
+		log.Infof("Setting log level to %q", level)
 		l, err := logrus.ParseLevel(level)
 		if err != nil {
-			log.Infof("Invalid log level %q", level)
-			return
-		}
-
-		log.SetLevel(l)
-	}
-}
-
-func main() {
-	requiredEnvVars := []string{"TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_USER", "TWITCH_CHANNEL"}
-	for _, envVar := range requiredEnvVars {
-		if os.Getenv(envVar) == "" {
-			log.Fatalf("Required environment variable %s is not set", envVar)
+			log.Warnf("Invalid log level %q, using info", level)
+			log.SetLevel(logrus.InfoLevel)
+		} else {
+			log.SetLevel(l)
 		}
 	}
 
-	token := os.Getenv("TWITCH_TOKEN")
-	refresh := os.Getenv("TWITCH_REFRESH")
-	expires := os.Getenv("TWITCH_EXPIRES")
+	log.Info("Starting Batybot...")
 
-	if token == "" || refresh == "" || expires == "" {
-		log.Info("No valid tokens found, starting OAuth flow...")
-		log.Info("Please open your browser and navigate to http://localhost:8080 to authorize the bot")
+	if !config.HasValidTokens() {
+		log.Info("Starting OAuth flow...")
+		log.Infof("Open your browser to http://localhost:%s to authorize the bot", config.Server().OAuthPort)
 
-		creds, err := getToken()
-		if err != nil {
-			log.Errorf("unable to get access token: %v", err)
-			panic(err)
+		if err := performOAuthFlow(config); err != nil {
+			log.Fatalf("OAuth failed: %v", err)
 		}
 
-		log.Info("Authorization successful! Bot is starting...")
-		token, refresh, expires = creds.get()
-	} else {
-		log.Info("Using existing tokens")
+		log.Info("Authorization successful!")
 	}
 
-	user := os.Getenv("TWITCH_USER")
-	if user == "" {
-		log.Fatalf("expected a user, set TWITCH_USER environment variable")
-	}
+	accessToken, _, expiresAt := config.GetTokens()
+	log.Debugf("Token expires at: %v", expiresAt)
 
-	token = strings.TrimPrefix(token, "oauth:")
-	client := twitch.NewClient("batybot", token)
+	twitchConfig := config.Twitch()
+	accessToken = strings.TrimPrefix(accessToken, "oauth:")
+	client := twitch.NewClient("batybot", accessToken)
 
-	if os.Getenv("BOT_VERIFIED") == "true" {
+	if config.Bot().Verified {
 		client.SetJoinRateLimiter(twitch.CreateVerifiedRateLimiter())
 		log.Info("Using verified bot rate limiter")
 	} else {
@@ -82,32 +70,27 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	setupEventHandlers(client, user)
+	setupEventHandlers(client, twitchConfig.User)
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		doRefresh(ctx, client, refresh, expires)
+		tokenRefreshWatch(ctx, client, config)
 	}()
 
-	channel := os.Getenv("TWITCH_CHANNEL")
-	if channel == "" {
-		log.Fatal("expected TWITCH_CHANNEL to be set")
-		panic("TWITCH_CHANNEL unset")
-	}
-
-	client.Join(channel)
+	client.Join(twitchConfig.Channel)
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		if err := client.Connect(); err != nil {
-			log.Errorf("unable to connect: %v", err)
+			log.Errorf("Unable to connect: %v", err)
 			cancel()
 		}
 	}()
 
-	log.Infof("Batybot started! Connected as %s in #%s", user, channel)
+	log.Infof("Batybot started! Connected as %s in #%s", twitchConfig.User, twitchConfig.Channel)
+	log.Info("Press Ctrl+C to gracefully shutdown")
 
 	<-sigChan
 	log.Info("Shutdown signal received, shutting down...")
@@ -117,8 +100,7 @@ func main() {
 	if client != nil {
 		log.Info("Disconnecting from Twitch...")
 		if err := client.Disconnect(); err != nil {
-			log.Info("Unable to disconnect, exiting anyway")
-			return
+			log.Warn("Unable to disconnect cleanly, forcing exit")
 		}
 	}
 
@@ -142,6 +124,11 @@ func setupEventHandlers(client *twitch.Client, botUser string) {
 	client.OnPrivateMessage(func(message twitch.PrivateMessage) {
 		log.Debugln(message.Channel, message.User.Name, message.Message)
 
+		// Skip messages from the bot itself
+		if strings.EqualFold(message.User.Name, botUser) {
+			return
+		}
+
 		msg := strings.ToLower(message.Message)
 		switch {
 		case strings.Contains(msg, "batjam"):
@@ -162,7 +149,7 @@ func setupEventHandlers(client *twitch.Client, botUser string) {
 			log.Debugf("Message from broadcaster: %s", message.User.DisplayName)
 		}
 
-		if strings.Contains(strings.ToLower(message.Message), "batybot") && time.Since(lastMention) > 5*time.Minute {
+		if strings.Contains(msg, "batybot") && time.Since(lastMention) > 5*time.Minute {
 			lastMention = time.Now()
 			client.Say(message.Channel, "What? No, I'm awake BatPls")
 		}
@@ -281,7 +268,59 @@ func setupEventHandlers(client *twitch.Client, botUser string) {
 	})
 }
 
-func doRefresh(ctx context.Context, client *twitch.Client, refresh, expires string) {
+func tokenDelay(ctx context.Context, config *ConfigManager) bool {
+	_, _, expiresAt := config.GetTokens()
+	if time.Now().After(expiresAt) {
+		log.Warnf("refresh token is already expired at %s", expiresAt)
+	}
+
+	// Refresh when 10 minutes are left (or immediately if already expired)
+	refreshTime := expiresAt.Add(-10 * time.Minute)
+	if refreshTime.Before(time.Now()) {
+		refreshTime = time.Now()
+	}
+
+	until := time.Until(refreshTime)
+	log.Debugf("Waiting %v before refreshing token that expires at %s", until, expiresAt)
+
+	select {
+	case <-ctx.Done():
+		log.Info("Token refresh routine stopping during wait")
+		return true
+	case <-time.After(until):
+	}
+
+	return false
+}
+
+func tokenRefresh(ctx context.Context, client *twitch.Client, config *ConfigManager) bool {
+	log.Info("Refreshing token...")
+
+	_, refreshToken, _ := config.GetTokens()
+	newTokens, err := refreshTokens(config, refreshToken)
+	if err != nil {
+		log.Errorf("Failed to refresh token: %v", err)
+		select {
+		case <-ctx.Done():
+			return true
+		case <-time.After(30 * time.Second):
+			return false
+		}
+	}
+
+	accessToken, refreshToken, expiresAt := newTokens.get()
+	config.SetTokens(accessToken, refreshToken, parseExpiresTime(expiresAt))
+
+	token := strings.TrimPrefix(accessToken, "oauth:")
+	client.SetIRCToken(token)
+
+	log.Info("Token refreshed successfully")
+	log.Debugf("New token expires at: %s", expiresAt)
+
+	return false
+}
+
+func tokenRefreshWatch(ctx context.Context, client *twitch.Client, config *ConfigManager) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -290,58 +329,12 @@ func doRefresh(ctx context.Context, client *twitch.Client, refresh, expires stri
 		default:
 		}
 
-		expiresAt, err := time.Parse(time.RFC3339Nano, expires)
-		if err != nil {
-			log.Errorf("unable to parse expires time: %v", err)
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(1 * time.Minute):
-				continue
-			}
-		}
-
-		if time.Now().After(expiresAt) {
-			log.Warnf("refresh token is already expired at %s", expiresAt)
-		}
-
-		// Refresh when 10 minutes are left (or immediately if already expired)
-		refreshTime := expiresAt.Add(-10 * time.Minute)
-		if refreshTime.Before(time.Now()) {
-			refreshTime = time.Now()
-		}
-
-		until := time.Until(refreshTime)
-		log.Debugf("Waiting %v before refreshing token that expires at %s", until, expires)
-
-		select {
-		case <-ctx.Done():
-			log.Info("Token refresh routine stopping during wait")
+		if tokenDelay(ctx, config) {
 			return
-		case <-time.After(until):
 		}
 
-		log.Info("Refreshing token...")
-		creds, err := refreshToken(refresh)
-		if err != nil {
-			log.Errorf("Failed to refresh token: %v", err)
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(30 * time.Second):
-				continue
-			}
+		if tokenRefresh(ctx, client, config) {
+			return
 		}
-
-		var token string
-		token, refresh, expires = creds.get()
-
-		token = strings.TrimPrefix(token, "oauth:")
-
-		log.Info("Token refreshed successfully")
-
-		client.SetIRCToken(token)
-
-		log.Debugf("New token expires at: %s", expires)
 	}
 }
