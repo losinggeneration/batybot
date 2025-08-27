@@ -121,14 +121,14 @@ func newConfigManager() (*ConfigManager, error) {
 
 	if err := k.Load(env.Provider("BATYBOT_", ".", func(s string) string {
 		return map[string]string{
-			"TWITCH_CLIENT_ID":     "twitch.client_id",
-			"TWITCH_CLIENT_SECRET": "twitch.client_secret",
-			"TWITCH_USER":          "twitch.user",
-			"TWITCH_CHANNEL":       "twitch.channel",
-			"OAUTH_PORT":           "server.oauth_port",
-			"VIRTUAL_HOST":         "server.virtual_host",
-			"BOT_VERIFIED":         "bot.verified",
-			"LOG_LEVEL":            "logging.level",
+			"BATYBOT_TWITCH_CLIENT_ID":     "twitch.client_id",
+			"BATYBOT_TWITCH_CLIENT_SECRET": "twitch.client_secret",
+			"BATYBOT_TWITCH_USER":          "twitch.user",
+			"BATYBOT_TWITCH_CHANNEL":       "twitch.channel",
+			"BATYBOT_OAUTH_PORT":           "server.oauth_port",
+			"BATYBOT_VIRTUAL_HOST":         "server.virtual_host",
+			"BATYBOT_BOT_VERIFIED":         "bot.verified",
+			"BATYBOT_LOG_LEVEL":            "logging.level",
 		}[s]
 	}), nil); err != nil {
 		return nil, fmt.Errorf("error loading environment variables: %w", err)

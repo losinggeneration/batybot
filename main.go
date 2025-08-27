@@ -278,7 +278,14 @@ func setupEventHandlers(client *twitch.Client, botUser string) {
 	})
 }
 
-func tokenDelay(ctx context.Context, config *ConfigManager) bool {
+type refreshControl int
+
+const (
+	refreshControlStop     = 1
+	refreshControlContinue = 2
+)
+
+func tokenDelay(ctx context.Context, config *ConfigManager) refreshControl {
 	_, _, expiresAt := config.GetTokens()
 	if time.Now().After(expiresAt) {
 		log.Warnf("refresh token is already expired at %s", expiresAt)
@@ -296,14 +303,14 @@ func tokenDelay(ctx context.Context, config *ConfigManager) bool {
 	select {
 	case <-ctx.Done():
 		log.Info("Token refresh routine stopping during wait")
-		return true
+		return refreshControlStop
 	case <-time.After(until):
 	}
 
-	return false
+	return refreshControlContinue
 }
 
-func tokenRefresh(ctx context.Context, client *twitch.Client, config *ConfigManager) bool {
+func tokenRefresh(ctx context.Context, client *twitch.Client, config *ConfigManager) refreshControl {
 	log.Info("Refreshing token...")
 
 	_, refreshToken, _ := config.GetTokens()
@@ -312,9 +319,9 @@ func tokenRefresh(ctx context.Context, client *twitch.Client, config *ConfigMana
 		log.Errorf("Failed to refresh token: %v", err)
 		select {
 		case <-ctx.Done():
-			return true
+			return refreshControlStop
 		case <-time.After(30 * time.Second):
-			return false
+			return refreshControlContinue
 		}
 	}
 
@@ -327,7 +334,7 @@ func tokenRefresh(ctx context.Context, client *twitch.Client, config *ConfigMana
 	log.Info("Token refreshed successfully")
 	log.Debugf("New token expires at: %s", expiresAt)
 
-	return false
+	return refreshControlContinue
 }
 
 func tokenRefreshWatch(ctx context.Context, client *twitch.Client, config *ConfigManager) {
@@ -339,11 +346,11 @@ func tokenRefreshWatch(ctx context.Context, client *twitch.Client, config *Confi
 		default:
 		}
 
-		if tokenDelay(ctx, config) {
+		if tokenDelay(ctx, config) == refreshControlStop {
 			return
 		}
 
-		if tokenRefresh(ctx, client, config) {
+		if tokenRefresh(ctx, client, config) == refreshControlStop {
 			return
 		}
 	}
