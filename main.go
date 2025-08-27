@@ -16,7 +16,7 @@ import (
 
 var log *logrus.Logger
 
-func main() {
+func setup() (*twitch.Client, *ConfigManager) {
 	log = logrus.New()
 	config, err := InitConfig()
 	if err != nil {
@@ -50,7 +50,6 @@ func main() {
 	accessToken, _, expiresAt := config.GetTokens()
 	log.Debugf("Token expires at: %v", expiresAt)
 
-	twitchConfig := config.Twitch()
 	accessToken = strings.TrimPrefix(accessToken, "oauth:")
 	client := twitch.NewClient("batybot", accessToken)
 
@@ -62,6 +61,12 @@ func main() {
 		log.Info("Using default rate limiter")
 	}
 
+	return client, config
+}
+
+func main() {
+	client, config := setup()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -70,6 +75,7 @@ func main() {
 
 	var wg sync.WaitGroup
 
+	twitchConfig := config.Twitch()
 	setupEventHandlers(client, twitchConfig.User)
 
 	wg.Add(1)
@@ -97,6 +103,10 @@ func main() {
 
 	cancel()
 
+	shutdown(client, &wg)
+}
+
+func shutdown(client *twitch.Client, wg *sync.WaitGroup) {
 	if client != nil {
 		log.Info("Disconnecting from Twitch...")
 		if err := client.Disconnect(); err != nil {
