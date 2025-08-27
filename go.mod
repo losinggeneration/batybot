@@ -1,11 +1,11 @@
 module github.com/losinggeneration/batybot
 
-go 1.20
+go 1.22
 
 require (
-	github.com/gempir/go-twitch-irc/v4 v4.0.0
-	github.com/nicklaw5/helix/v2 v2.22.0
-	github.com/sirupsen/logrus v1.9.0
+	github.com/gempir/go-twitch-irc/v4 v4.2.0
+	github.com/nicklaw5/helix/v2 v2.31.1
+	github.com/sirupsen/logrus v1.9.3
 )
 
 require (
