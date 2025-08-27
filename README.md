@@ -1,6 +1,6 @@
 # Batybot
 
-Batybot is a basic Twitch bot for running on JilliiiBeanzZz's channel.
+Batybot is a basic Twitch bot for running on JilliiiBeanz's channel.
 
 # Environment
 
@@ -13,7 +13,7 @@ The following settings can be used:
 
 # Getting an oauth token
 
-In order to use the bot it needs pretty much full priveledges.
+In order to use the bot it needs pretty much full privileges.
 
     twitch-cli token -u --client-id=$TWITCH_CLIENT_ID -s "chat:edit chat:read whispers:read whispers:edit"
 
