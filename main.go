@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -48,6 +47,7 @@ func main() {
 		log.Fatalf("expected a user, set TWITCH_USER environment variable")
 	}
 
+	token = strings.TrimPrefix(token, "oauth:")
 	client := twitch.NewClient("batybot", token)
 
 	client.OnNoticeMessage(func(message twitch.NoticeMessage) {
@@ -89,6 +89,10 @@ func main() {
 		log.Info("connected")
 	})
 
+	client.OnReconnectMessage(func(message twitch.ReconnectMessage) {
+		log.Info("received reconnect message")
+	})
+
 	channel := os.Getenv("TWITCH_CHANNEL")
 	if channel == "" {
 		log.Fatal("expected TWITCH_CHANNEL to be set")
@@ -103,34 +107,49 @@ func main() {
 	}
 }
 
-// This isn't working to keep the token valid
 func doRefresh(client *twitch.Client, refresh, expires string) {
 	for {
 		expiresAt, err := time.Parse(time.RFC3339Nano, expires)
 		if err != nil {
-			panic(fmt.Errorf("unable to parse expires time: %w", err))
-		} else if time.Now().After(expiresAt) {
-			panic(fmt.Errorf("refresh token %s is already expired", expiresAt))
+			log.Errorf("unable to parse expires time: %v", err)
+			// Wait a bit and continue to prevent tight loop
+			time.Sleep(1 * time.Minute)
+			continue
 		}
 
-		const early = 400
-		until := time.Until(expiresAt) / early
-		log.Debugf("Waiting %v before refreshing token that expires %s", until, expires)
+		// Check if token is already expired
+		if time.Now().After(expiresAt) {
+			log.Warnf("refresh token is already expired at %s", expiresAt)
+		}
+
+		// Refresh when 10 minutes are left (or immediately if already expired)
+		refreshTime := expiresAt.Add(-10 * time.Minute)
+		if refreshTime.Before(time.Now()) {
+			refreshTime = time.Now()
+		}
+
+		until := time.Until(refreshTime)
+		log.Debugf("Waiting %v before refreshing token that expires at %s", until, expires)
 		time.Sleep(until)
 
+		log.Info("Refreshing token...")
 		creds, err := refreshToken(refresh)
 		if err != nil {
-			panic(err)
+			log.Errorf("Failed to refresh token: %v", err)
+			// Wait a bit before retrying
+			time.Sleep(30 * time.Second)
+			continue
 		}
 
 		var token string
 		token, refresh, expires = creds.get()
+
+		token = strings.TrimPrefix(token, "oauth:")
+
+		log.Info("Token refreshed successfully")
+
 		client.SetIRCToken(token)
 
-		err = client.Connect()
-		if err != nil {
-			log.Errorf("unable to connect %#v", token)
-			panic(err)
-		}
+		log.Debugf("New token expires at: %s", expires)
 	}
 }

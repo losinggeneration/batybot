@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/nicklaw5/helix/v2"
@@ -34,7 +33,15 @@ func init() {
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	s.code = q.Get("code") // scope is also available, but I don't think it's needed
-	s.Shutdown(r.Context())
+
+	_, err := fmt.Fprint(w, "Authorization received! You can close this tab.")
+	if err != nil {
+		fmt.Printf("Unable to write response to browser: %s\n", err)
+	}
+
+	if err := s.Shutdown(r.Context()); err != nil {
+		fmt.Printf("Unable to shutdown http server: %s\n", err)
+	}
 }
 
 func (s *server) Start() error {
@@ -46,20 +53,20 @@ func (s *server) Start() error {
 
 func (t Token) get() (token, refresh, expires string) {
 	token = t.AccessToken
-	if !strings.HasPrefix(token, "oauth:") {
-		token = "oauth:" + token
-	}
-
 	refresh = t.RefreshToken
 	expires = time.Now().Add(time.Duration(t.ExpiresIn) * time.Second).Format(time.RFC3339Nano)
-	// expires = strconv.FormatInt(int64(t.ExpiresIn), 10)
 
 	return token, refresh, expires
 }
 
 func authCode() (string, error) {
+	clientID := os.Getenv("TWITCH_CLIENT_ID")
+	if clientID == "" {
+		return "", fmt.Errorf("TWITCH_CLIENT_ID environment variable is required")
+	}
+
 	client, err := helix.NewClient(&helix.Options{
-		ClientID:    os.Getenv("TWITCH_CLIENT_ID"),
+		ClientID:    clientID,
 		RedirectURI: redirect,
 	})
 	if err != nil {
@@ -71,7 +78,7 @@ func authCode() (string, error) {
 		Scopes:       []string{"chat:edit", "chat:read", "whispers:read", "whispers:edit"},
 	})
 
-	log.Info(url)
+	log.Infof("Please visit this URL to authorize the application: %s", url)
 
 	s := server{
 		listen: listen,
@@ -80,13 +87,24 @@ func authCode() (string, error) {
 		return "", fmt.Errorf("authCode: unable to start server: %w", err)
 	}
 
+	if s.code == "" {
+		return "", fmt.Errorf("no authorization code received")
+	}
+
 	return s.code, nil
 }
 
 func getUserToken(code string) (*Token, error) {
+	clientID := os.Getenv("TWITCH_CLIENT_ID")
+	clientSecret := os.Getenv("TWITCH_CLIENT_SECRET")
+
+	if clientID == "" || clientSecret == "" {
+		return nil, fmt.Errorf("TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET environment variables are required")
+	}
+
 	client, err := helix.NewClient(&helix.Options{
-		ClientID:     os.Getenv("TWITCH_CLIENT_ID"),
-		ClientSecret: os.Getenv("TWITCH_CLIENT_SECRET"),
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
 		RedirectURI:  redirect,
 	})
 	if err != nil {
@@ -97,7 +115,7 @@ func getUserToken(code string) (*Token, error) {
 	if err != nil {
 		return nil, fmt.Errorf("getUserToken: unable to get user token: %w", err)
 	} else if r.ErrorStatus != 0 {
-		return nil, fmt.Errorf("getUserToken: invalid response: %v", r.ErrorStatus)
+		return nil, fmt.Errorf("getUserToken: invalid response: %v - %s", r.ErrorStatus, r.ErrorMessage)
 	}
 
 	return &Token{r.Data}, nil
@@ -118,13 +136,22 @@ func getToken() (*Token, error) {
 }
 
 func refreshToken(refresh string) (*Token, error) {
+	clientID := os.Getenv("TWITCH_CLIENT_ID")
+	clientSecret := os.Getenv("TWITCH_CLIENT_SECRET")
+
+	if clientID == "" || clientSecret == "" {
+		return nil, fmt.Errorf("TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET environment variables are required")
+	}
+
 	client, err := helix.NewClient(&helix.Options{
-		ClientID:     os.Getenv("TWITCH_CLIENT_ID"),
-		ClientSecret: os.Getenv("TWITCH_CLIENT_SECRET"),
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("refreshToken: unable to set up client: %w", err)
 	}
+
+	log.Debugf("Attempting to refresh token with refresh token: %s...", refresh[:min(len(refresh), 10)])
 
 	r, err := client.RefreshUserAccessToken(refresh)
 	if err != nil {
@@ -133,5 +160,13 @@ func refreshToken(refresh string) (*Token, error) {
 		return nil, fmt.Errorf("refreshToken: invalid response: %v - %s", r.ErrorStatus, r.ErrorMessage)
 	}
 
+	log.Debug("Token refresh successful")
 	return &Token{r.Data}, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
