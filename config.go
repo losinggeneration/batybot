@@ -82,18 +82,8 @@ func newConfigManager() (*ConfigManager, error) {
 	k := koanf.New(".")
 
 	defaults := Config{
-		Twitch: TwitchConfig{
-			ClientID:     "",
-			ClientSecret: "",
-			User:         "",
-			Channel:      "",
-		},
 		Server: ServerConfig{
-			OAuthPort:   "8080",
-			VirtualHost: "",
-		},
-		Bot: BotConfig{
-			Verified: false,
+			OAuthPort: "8080",
 		},
 		Logging: LoggingConfig{
 			Level: "info",
