@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -18,7 +19,12 @@ var log *logrus.Logger
 
 func setup() (*twitch.Client, *ConfigManager) {
 	log = logrus.New()
-	config, err := InitConfig()
+
+	var cfg string
+	flag.StringVar(&cfg, "config", "", "config file to use")
+	flag.Parse()
+
+	config, err := InitConfig(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize configuration: %v", err)
 	}

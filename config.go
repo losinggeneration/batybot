@@ -62,10 +62,10 @@ var (
 )
 
 // InitConfig initializes the global configuration manager
-func InitConfig() (*ConfigManager, error) {
+func InitConfig(cfg string) (*ConfigManager, error) {
 	var err error
 	configOnce.Do(func() {
-		globalConfig, err = newConfigManager()
+		globalConfig, err = newConfigManager(cfg)
 	})
 	return globalConfig, err
 }
@@ -78,7 +78,7 @@ func GetConfig() *ConfigManager {
 	return globalConfig
 }
 
-func newConfigManager() (*ConfigManager, error) {
+func newConfigManager(cfg string) (*ConfigManager, error) {
 	k := koanf.New(".")
 
 	defaults := Config{
@@ -95,6 +95,10 @@ func newConfigManager() (*ConfigManager, error) {
 	}
 
 	configFiles := []string{"config.yaml", "config.yml", "config.json"}
+	if cfg != "" {
+		configFiles = []string{cfg}
+	}
+
 	for _, configFile := range configFiles {
 		var parser koanf.Parser
 		if configFile[len(configFile)-4:] == "json" {
