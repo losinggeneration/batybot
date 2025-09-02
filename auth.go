@@ -41,7 +41,7 @@ func (s *server) error(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
 
-	log.Errorf("OAuth error: %s - %s", errMsg, q.Get("error_description"))
+	log.Errorf("Auth error: %s - %s", errMsg, q.Get("error_description"))
 
 	data := struct {
 		Message     string
@@ -165,7 +165,7 @@ func (s *server) Start() error {
 		}
 	}()
 
-	log.Infof("OAuth server started at http://localhost%s", s.listen)
+	log.Debugf("Server started at http://localhost%s", s.listen)
 	log.Infof("Open your browser and navigate to http://localhost%s to authorize the bot", s.listen)
 
 	<-s.done
@@ -184,7 +184,42 @@ func (t Token) get() (token, refresh, expires string) {
 	return token, refresh, expires
 }
 
-func performOAuthFlow(config *ConfigManager) error {
+func oauthClientFlow(config *ConfigManager) error {
+	token, err := getAppToken(config)
+	if err != nil {
+		return err
+	}
+
+	tokenStr, refresh, expires := token.get()
+
+	expiresAt := parseExpiresTime(expires)
+	config.SetTokens(tokenStr, refresh, expiresAt)
+
+	return nil
+}
+
+func getAppToken(config *ConfigManager) (*Token, error) {
+	twitchConfig := config.Twitch()
+
+	client, err := helix.NewClient(&helix.Options{
+		ClientID:     twitchConfig.ClientID,
+		ClientSecret: twitchConfig.ClientSecret,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getAppToken: unable to set up helix client: %w", err)
+	}
+
+	r, err := client.RequestAppAccessToken(config.Twitch().Scopes)
+	if err != nil {
+		return nil, fmt.Errorf("getAppToken: unable to get user token: %w", err)
+	} else if r.ErrorStatus != 0 {
+		return nil, fmt.Errorf("getAppToken: invalid response: %v - %s", r.ErrorStatus, r.ErrorMessage)
+	}
+
+	return &Token{r.Data}, nil
+}
+
+func oauthCodeFlow(config *ConfigManager) error {
 	twitchConfig := config.Twitch()
 	serverConfig := config.Server()
 

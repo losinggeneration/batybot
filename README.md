@@ -1,6 +1,7 @@
 # Batybot
 
-Batybot is a basic Twitch bot for running on JilliiiBeanz's channel.
+Batybot is a basic Twitch bot. It's probably not useful to you and requires
+code changes to do something useful for you.
 
 # Environment
 
