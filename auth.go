@@ -22,98 +22,135 @@ type server struct {
 	done   chan bool
 }
 
-//go:embed index.html.gotmpl callback.html.gotmpl
+//go:embed *.html.tmpl
 var embedFS embed.FS
 
-var indexTemplate, callbackTemplate string
-
-func init() {
-	if b, err := embedFS.ReadFile("index.html.gotmpl"); err != nil {
-		panic(err)
-	} else {
-		indexTemplate = string(b)
+func loadEmbedFs(name string) (string, error) {
+	b, err := embedFS.ReadFile(name + ".html.tmpl")
+	if err != nil {
+		return "", err
 	}
 
-	if b, err := embedFS.ReadFile("callback.html.gotmpl"); err != nil {
-		panic(err)
-	} else {
-		callbackTemplate = string(b)
-	}
+	return string(b), nil
 }
 
-func (s *server) setupRoutes(authURL string) {
-	s.mux = http.NewServeMux()
+func (s *server) error(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	errMsg := q.Get("error")
+	if errMsg == "" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
 
-	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		tmpl := template.Must(template.New("index").Parse(indexTemplate))
+	log.Errorf("OAuth error: %s - %s", errMsg, q.Get("error_description"))
+
+	data := struct {
+		Message     string
+		Description string
+	}{
+		Message:     errMsg,
+		Description: q.Get("error_description"),
+	}
+
+	s.showTemplate(w, "error", "error", data)
+}
+
+func (s *server) indexHandler(authURL string) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if errMsg := q.Get("error"); errMsg != "" {
+			http.Redirect(w, r, "/error?"+r.URL.Query().Encode(), http.StatusSeeOther)
+			return
+		}
+
 		data := struct {
 			AuthURL string
 		}{
 			AuthURL: authURL,
 		}
 
-		if err := tmpl.Execute(w, data); err != nil {
-			log.Errorf("Unable to write response: %s", err)
-		}
-	})
+		s.showTemplate(w, "index", "index", data)
+	}
+}
 
-	s.mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		if _, err := fmt.Fprintln(w, "OK"); err != nil {
-			log.Errorf("Unable to write response: %s", err)
-		}
-	})
+func (s *server) showTemplate(w http.ResponseWriter, filename, name string, data any) {
+	file, err := loadEmbedFs(filename)
+	if err != nil {
+		panic(err)
+	}
 
-	s.mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+	tmpl := template.Must(template.New(name).Parse(file))
+
+	if err := tmpl.Execute(w, data); err != nil {
+		log.Errorf("Unable to write response: %s", err)
+	}
+}
+
+func (s *server) healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	if _, err := fmt.Fprintln(w, "OK"); err != nil {
+		log.Errorf("Unable to write response: %s", err)
+	}
+}
+
+func (s *server) callbackHandler(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	if errMsg := q.Get("error"); errMsg != "" {
+		http.Redirect(w, r, "/error?"+r.URL.Query().Encode(), http.StatusSeeOther)
+		return
+	}
+
+	s.code = q.Get("code")
+	if s.code == "" {
+		log.Errorf("Failed to get code: %v", r.URL.Query().Encode())
 		q := r.URL.Query()
+		q.Add("error", "No authorization code received")
+		http.Redirect(w, r, "/error?"+q.Encode(), http.StatusSeeOther)
+		return
+	}
 
-		if errMsg := q.Get("error"); errMsg != "" {
-			log.Errorf("OAuth error: %s - %s", errMsg, q.Get("error_description"))
-			http.Error(w, fmt.Sprintf("Authorization failed: %s - %s", errMsg, q.Get("error_description")), http.StatusBadRequest)
-			return
-		}
+	config := GetConfig()
+	token, err := getUserToken(config, s.code)
+	if err != nil {
+		log.Errorf("Failed to get access token: %v", err)
+		q := r.URL.Query()
+		q.Add("error", err.Error())
+		http.Redirect(w, r, "/error?"+q.Encode(), http.StatusSeeOther)
+		return
+	}
 
-		s.code = q.Get("code")
-		if s.code == "" {
-			http.Error(w, "No authorization code received", http.StatusBadRequest)
-			return
-		}
+	tokenStr, refresh, expires := token.get()
 
-		config := GetConfig()
-		token, err := getUserToken(config, s.code)
-		if err != nil {
-			log.Errorf("Failed to get access token: %v", err)
-			http.Error(w, fmt.Sprintf("Failed to get access token: %v", err), http.StatusInternalServerError)
-			return
-		}
+	expiresAt := parseExpiresTime(expires)
+	config.SetTokens(tokenStr, refresh, expiresAt)
 
-		tokenStr, refresh, expires := token.get()
+	data := struct {
+		Token      string
+		Refresh    string
+		Expires    string
+		ExpiresRaw string
+	}{
+		Token:      tokenStr,
+		Refresh:    refresh,
+		Expires:    expiresAt.Format(time.DateTime),
+		ExpiresRaw: expires,
+	}
 
-		expiresAt := parseExpiresTime(expires)
-		config.SetTokens(tokenStr, refresh, expiresAt)
+	s.showTemplate(w, "callback", "callback", data)
 
-		tmpl := template.Must(template.New("callback").Parse(callbackTemplate))
-		data := struct {
-			Token      string
-			Refresh    string
-			Expires    string
-			ExpiresRaw string
-		}{
-			Token:      tokenStr,
-			Refresh:    refresh,
-			Expires:    expiresAt.Format("January 2, 2006 at 3:04 PM MST"),
-			ExpiresRaw: expires,
-		}
+	go func() {
+		time.Sleep(2 * time.Second) // Give time for the response to be sent
+		s.done <- true
+	}()
+}
 
-		if err := tmpl.Execute(w, data); err != nil {
-			log.Errorf("Unable to write response: %s", err)
-		}
+func (s *server) setupRoutes(authURL string) {
+	s.mux = http.NewServeMux()
 
-		go func() {
-			time.Sleep(2 * time.Second) // Give time for the response to be sent
-			s.done <- true
-		}()
-	})
+	s.mux.HandleFunc("/", s.indexHandler(authURL))
+	s.mux.HandleFunc("/health", s.healthHandler)
+	s.mux.HandleFunc("/error", s.error)
+	s.mux.HandleFunc("/callback", s.callbackHandler)
 
 	s.Handler = s.mux
 }
@@ -155,6 +192,7 @@ func performOAuthFlow(config *ConfigManager) error {
 	if serverConfig.VirtualHost != "" {
 		redirect = fmt.Sprintf("https://%s/callback", serverConfig.VirtualHost)
 	}
+	log.Debug("redirecting back to: ", redirect)
 
 	client, err := helix.NewClient(&helix.Options{
 		ClientID:    twitchConfig.ClientID,
@@ -166,7 +204,7 @@ func performOAuthFlow(config *ConfigManager) error {
 
 	authURL := client.GetAuthorizationURL(&helix.AuthorizationURLParams{
 		ResponseType: "code",
-		Scopes:       []string{"chat:edit", "chat:read", "whispers:read", "whispers:edit"},
+		Scopes:       config.Twitch().Scopes,
 	})
 
 	s := server{

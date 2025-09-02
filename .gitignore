@@ -1,3 +1,5 @@
 .env*
 *~
 batybot
+config.yaml
+tokens.json

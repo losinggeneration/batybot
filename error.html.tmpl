@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Batybot - Authorization Error</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0f0f23;
+            color: #cccccc;
+        }
+
+        .container {
+            background: #2d2d2d;
+            padding: 30px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            text-align: center;
+        }
+
+        h1 {
+            color: #ff2200;
+        }
+
+        .failure {
+            background: #dd1a2e;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            border-left: 4px solid #ffaa00;
+        }
+
+        .error-info {
+            background: #2a2a3e;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        code {
+            background: #1a1a1a;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>❌ Authorization Error!</h1>
+
+        <div class="failure">
+            <h3>Batybot failed to authorized...</h3>
+        </div>
+
+        <div class="error-info">
+            <p><strong>Error:</strong> {{.Message}}</p>
+            {{if .Description}}<p><strong>Description:</strong> {{.Description}}</p>{{end}}
+        </div>
+
+        <p><em><a href="/">Click here</a> to try again.</em></p>
+    </div>
+</body>
+
+</html>

@@ -24,10 +24,11 @@ type Config struct {
 }
 
 type TwitchConfig struct {
-	ClientID     string `koanf:"client_id" validate:"required"`
-	ClientSecret string `koanf:"client_secret" validate:"required"`
-	User         string `koanf:"user" validate:"required"`
-	Channel      string `koanf:"channel" validate:"required"`
+	ClientID     string   `koanf:"client_id" validate:"required"`
+	ClientSecret string   `koanf:"client_secret" validate:"required"`
+	User         string   `koanf:"user" validate:"required"`
+	Channel      string   `koanf:"channel" validate:"required"`
+	Scopes       []string `koanf:"scopes"`
 }
 
 type ServerConfig struct {
@@ -82,6 +83,9 @@ func newConfigManager(cfg string) (*ConfigManager, error) {
 	k := koanf.New(".")
 
 	defaults := Config{
+		Twitch: TwitchConfig{
+			Scopes: []string{"chat:edit", "chat:read", "whispers:read", "whispers:edit"},
+		},
 		Server: ServerConfig{
 			OAuthPort: "8080",
 		},

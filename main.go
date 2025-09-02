@@ -17,6 +17,14 @@ import (
 
 var log *logrus.Logger
 
+func prefixToken(token string) string {
+	if strings.HasPrefix(token, "oauth:") {
+		return token
+	}
+
+	return "oauth:" + token
+}
+
 func setup() (*twitch.Client, *ConfigManager) {
 	log = logrus.New()
 
@@ -56,8 +64,7 @@ func setup() (*twitch.Client, *ConfigManager) {
 	accessToken, _, expiresAt := config.GetTokens()
 	log.Debugf("Token expires at: %v", expiresAt)
 
-	accessToken = strings.TrimPrefix(accessToken, "oauth:")
-	client := twitch.NewClient("batybot", accessToken)
+	client := twitch.NewClient("batybot", prefixToken(accessToken))
 
 	if config.Bot().Verified {
 		client.SetJoinRateLimiter(twitch.CreateVerifiedRateLimiter())
@@ -334,8 +341,7 @@ func tokenRefresh(ctx context.Context, client *twitch.Client, config *ConfigMana
 	accessToken, refreshToken, expiresAt := newTokens.get()
 	config.SetTokens(accessToken, refreshToken, parseExpiresTime(expiresAt))
 
-	token := strings.TrimPrefix(accessToken, "oauth:")
-	client.SetIRCToken(token)
+	client.SetIRCToken(prefixToken(accessToken))
 
 	log.Info("Token refreshed successfully")
 	log.Debugf("New token expires at: %s", expiresAt)
