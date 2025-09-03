@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batybot Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
+            color: #e1e5e9;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(45deg, #9146ff, #00f5ff);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            color: #b8bcc2;
+            font-size: 1.1rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .stat-card {
+            background: rgba(26, 26, 46, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(145, 70, 255, 0.2);
+            border-radius: 16px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(145, 70, 255, 0.5);
+            box-shadow: 0 8px 32px rgba(145, 70, 255, 0.2);
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: #b8bcc2;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .tier1 {
+            color: #22c55e;
+        }
+
+        .tier2 {
+            color: #3b82f6;
+        }
+
+        .tier3 {
+            color: #a855f7;
+        }
+
+        .bits {
+            color: #fbbf24;
+        }
+
+        .tips {
+            color: #10b981;
+        }
+
+        .table-container {
+            background: rgba(26, 26, 46, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(145, 70, 255, 0.2);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .table-header {
+            background: linear-gradient(135deg, #9146ff 0%, #7c3aed 100%);
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .table-header h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table th,
+        .table td {
+            padding: 1rem 1.5rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .table th {
+            background: rgba(145, 70, 255, 0.1);
+            font-weight: 600;
+            color: #9146ff;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+        }
+
+        .table tbody tr {
+            transition: background-color 0.2s ease;
+        }
+
+        .table tbody tr:hover {
+            background: rgba(145, 70, 255, 0.08);
+        }
+
+        .table tbody tr:nth-child(even) {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .username {
+            font-weight: 600;
+            color: #00f5ff;
+        }
+
+        .number {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-weight: 500;
+        }
+
+        .total-row {
+            background: linear-gradient(135deg, rgba(145, 70, 255, 0.2), rgba(124, 58, 237, 0.2)) !important;
+            font-weight: 600;
+            border-top: 2px solid rgba(145, 70, 255, 0.5);
+        }
+
+        .total-row td {
+            font-size: 1.1rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #6b7280;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
+            }
+
+            .stat-card {
+                padding: 1rem;
+            }
+
+            .stat-value {
+                font-size: 2rem;
+            }
+
+            .table th,
+            .table td {
+                padding: 0.75rem 1rem;
+                font-size: 0.9rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .table th,
+            .table td {
+                padding: 0.5rem 0.75rem;
+                font-size: 0.85rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🦇 Batybot Dashboard</h1>
+        </div>
+
+        <!-- Aggregate Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value tier1">{{.Totals.Tier1}}</div>
+                <div class="stat-label">Tier 1 Subs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value tier2">{{.Totals.Tier2}}</div>
+                <div class="stat-label">Tier 2 Subs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value tier3">{{.Totals.Tier3}}</div>
+                <div class="stat-label">Tier 3 Subs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value bits">{{.Totals.Bits}}</div>
+                <div class="stat-label">Total Bits</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value tips">${{.Totals.Tips}}</div>
+                <div class="stat-label">Total Tips</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value tips">${{.Total}}</div>
+                <div class="stat-label">Total</div>
+            </div>
+        </div>
+
+        <!-- Users Table -->
+        <div class="table-container">
+            <div class="table-header">
+                <h2>User Contributions</h2>
+            </div>
+
+            {{if .Users}}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Tier 1</th>
+                        <th>Tier 2</th>
+                        <th>Tier 3</th>
+                        <th>Bits</th>
+                        <th>Tips</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range $username, $totals := .Users}}
+                    <tr>
+                        <td class="username">{{$username}}</td>
+                        <td class="number tier1">{{$totals.Tier1}}</td>
+                        <td class="number tier2">{{$totals.Tier2}}</td>
+                        <td class="number tier3">{{$totals.Tier3}}</td>
+                        <td class="number bits">{{$totals.Bits}}</td>
+                        <td class="number tips">${{$totals.Tips}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+            {{else}}
+            <div class="empty-state">
+                <svg fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd"
+                        d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V8zm0 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z"
+                        clip-rule="evenodd"></path>
+                </svg>
+                <h3>No user data available</h3>
+                <p>Users will appear here once they start interacting with the stream</p>
+            </div>
+            {{end}}
+        </div>
+    </div>
+</body>
+
+</html>

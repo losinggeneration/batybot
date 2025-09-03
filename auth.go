@@ -14,7 +14,7 @@ import (
 
 type Token struct{ helix.AccessCredentials }
 
-type server struct {
+type authServer struct {
 	http.Server
 	mux          *http.ServeMux
 	listen       string
@@ -36,7 +36,7 @@ func loadEmbedFs(name string) (string, error) {
 	return string(b), nil
 }
 
-func (s *server) error(w http.ResponseWriter, r *http.Request) {
+func (s *authServer) error(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	errMsg := q.Get("error")
 	if errMsg == "" {
@@ -53,10 +53,10 @@ func (s *server) error(w http.ResponseWriter, r *http.Request) {
 		Description: q.Get("error_description"),
 	}
 
-	s.showTemplate(w, "error", "error", data)
+	showTemplate(w, "error", "error", data)
 }
 
-func (s *server) indexHandler(authURL, userType, expectedUser string) func(w http.ResponseWriter, r *http.Request) {
+func (s *authServer) indexHandler(authURL, userType, expectedUser string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if errMsg := q.Get("error"); errMsg != "" {
@@ -74,11 +74,11 @@ func (s *server) indexHandler(authURL, userType, expectedUser string) func(w htt
 			ExpectedUser: expectedUser,
 		}
 
-		s.showTemplate(w, "index", "index", data)
+		showTemplate(w, "index", "index", data)
 	}
 }
 
-func (s *server) showTemplate(w http.ResponseWriter, filename, name string, data any) {
+func showTemplate(w http.ResponseWriter, filename, name string, data any) {
 	file, err := loadEmbedFs(filename)
 	if err != nil {
 		panic(err)
@@ -91,14 +91,14 @@ func (s *server) showTemplate(w http.ResponseWriter, filename, name string, data
 	}
 }
 
-func (s *server) healthHandler(w http.ResponseWriter, r *http.Request) {
+func (s *authServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	if _, err := fmt.Fprintln(w, "OK"); err != nil {
 		log.Errorf("Unable to write response: %s", err)
 	}
 }
 
-func (s *server) callbackHandler(w http.ResponseWriter, r *http.Request) {
+func (s *authServer) callbackHandler(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	if errMsg := q.Get("error"); errMsg != "" {
@@ -155,7 +155,7 @@ func (s *server) callbackHandler(w http.ResponseWriter, r *http.Request) {
 		Username:   user.Login,
 	}
 
-	s.showTemplate(w, "callback", "callback", data)
+	showTemplate(w, "callback", "callback", data)
 
 	go func() {
 		time.Sleep(2 * time.Second) // Give time for the response to be sent
@@ -163,7 +163,7 @@ func (s *server) callbackHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-func (s *server) setupRoutes(authURL, userType, expectedUser string) {
+func (s *authServer) setupRoutes(authURL, userType, expectedUser string) {
 	s.mux = http.NewServeMux()
 
 	s.mux.HandleFunc("/", s.indexHandler(authURL, userType, expectedUser))
@@ -174,7 +174,7 @@ func (s *server) setupRoutes(authURL, userType, expectedUser string) {
 	s.Handler = s.mux
 }
 
-func (s *server) Start() error {
+func (s *authServer) Start() error {
 	s.Addr = s.listen
 	s.done = make(chan bool, 1)
 
@@ -281,7 +281,7 @@ func oauthCodeFlow(config *ConfigManager, tokenType TokenType) error {
 		State:        string(rune(tokenType)), // Pass auth type as state
 	})
 
-	s := server{
+	s := authServer{
 		listen:       ":" + serverConfig.OAuthPort,
 		tokenType:    tokenType,
 		expectedUser: expectedUser,

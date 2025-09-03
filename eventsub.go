@@ -10,6 +10,12 @@ import (
 	helix "github.com/nicklaw5/helix/v2"
 )
 
+const (
+	SubTier1 = "1000"
+	SubTier2 = "2000"
+	SubTier3 = "3000"
+)
+
 type EventSubManager struct {
 	client     *eventsub.Client
 	chatClient *irc.Client
@@ -17,9 +23,10 @@ type EventSubManager struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
+	db         *DB
 }
 
-func NewEventSubManager(chatClient *irc.Client, config *ConfigManager) *EventSubManager {
+func NewEventSubManager(chatClient *irc.Client, db *DB, config *ConfigManager) *EventSubManager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &EventSubManager{
@@ -27,6 +34,7 @@ func NewEventSubManager(chatClient *irc.Client, config *ConfigManager) *EventSub
 		config:     config,
 		ctx:        ctx,
 		cancel:     cancel,
+		db:         db,
 	}
 }
 
@@ -242,13 +250,48 @@ func (esm *EventSubManager) subscribeToEvents(broadcasterID, sessionID string) e
 
 func (esm *EventSubManager) handleChannelSubscribe(event eventsub.EventChannelSubscribe) {
 	log.Debugf("New subscriber: %s (Tier: %s)", event.UserName, event.Tier)
+	var u UserTotals
+	switch event.Tier {
+	case SubTier1:
+		u.Tier1 = 1
+	case SubTier2:
+		u.Tier2 = 1
+	case SubTier3:
+		u.Tier3 = 1
+	}
+
+	// Don't double count gifted subs
+	if event.IsGift {
+		return
+	}
+
+	if err := esm.db.addUser(event.UserName, u); err != nil {
+		log.Errorf("unable to add subscription: %s", err)
+	}
 }
 
 func (esm *EventSubManager) handleChannelSubscriptionGift(event eventsub.EventChannelSubscriptionGift) {
+	username := event.UserName
 	if event.IsAnonymous {
+		username = "Anonymous"
 		log.Debugf("Anonymous gift sub: %d subs gifted (Tier: %s)", event.Total, event.Tier)
 	} else {
 		log.Debugf("Gift sub from %s: %d subs gifted (Tier: %s)", event.UserName, event.Total, event.Tier)
+	}
+
+	var u UserTotals
+	switch event.Tier {
+	case SubTier1:
+		u.Tier1 = int64(event.Total)
+	case SubTier2:
+		u.Tier2 = int64(event.Total)
+	case SubTier3:
+		u.Tier3 = int64(event.Total)
+	}
+
+	if err := esm.db.addUser(username, u); err != nil {
+		log.Errorf("unable to add subscription: %s", err)
+		log.Errorf("unable to add %q subscription of %v: %s", username, event.Tier, err)
 	}
 }
 
@@ -266,10 +309,16 @@ func (esm *EventSubManager) handleChannelRaid(event eventsub.EventChannelRaid) {
 }
 
 func (esm *EventSubManager) handleChannelCheer(event eventsub.EventChannelCheer) {
+	username := event.UserName
 	if event.IsAnonymous {
 		log.Debugf("Anonymous cheer: %d bits", event.Bits)
+		username = "Anonymous"
 	} else {
 		log.Debugf("Cheer from %s: %d bits - %s", event.UserName, event.Bits, event.Message)
+	}
+
+	if err := esm.db.addUser(username, UserTotals{Bits: int64(event.Bits)}); err != nil {
+		log.Errorf("unable to add %q bits of %d: %s", username, event.Bits, err)
 	}
 }
 

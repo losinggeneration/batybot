@@ -12,6 +12,7 @@ import (
 
 	irc "github.com/gempir/go-twitch-irc/v4"
 	"github.com/sirupsen/logrus"
+	bolt "go.etcd.io/bbolt"
 )
 
 type refreshControl int
@@ -82,6 +83,26 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	bdb, err := bolt.Open("data.db", 0600, nil)
+	if err != nil {
+		log.Error(err)
+		defer os.Exit(1)
+		return
+	}
+	defer func() {
+		if err := bdb.Close(); err != nil {
+			log.Warnf("failed to close database: %s", err)
+		}
+	}()
+
+	db := DB{bdb}
+
+	if err := db.setupBuckets(); err != nil {
+		log.Errorf("unable to create buckets: %s", err)
+		defer os.Exit(1)
+		return
+	}
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -90,7 +111,7 @@ func main() {
 	twitchConfig := config.Twitch()
 	setupEventHandlers(client, twitchConfig.User)
 
-	esm := NewEventSubManager(client, config)
+	esm := NewEventSubManager(client, &db, config)
 	if err := esm.Start(); err != nil {
 		log.Warnf("Failed to start EventSub manager: %v", err)
 		log.Info("Continuing without EventSub support...")
@@ -119,6 +140,10 @@ func main() {
 	}()
 
 	log.Infof("Batybot started! Connected as %s in #%s", twitchConfig.User, twitchConfig.Channel)
+	dashboard := dashboardServer{db: &db}
+	if err := dashboard.Start(); err != nil {
+		log.Errorf("dashboard exited early: %s", err)
+	}
 
 	<-sigChan
 	log.Info("Shutdown signal received, shutting down...")
