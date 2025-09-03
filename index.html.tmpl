@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-    <title>Batybot OAuth Setup</title>
+    <title>Batybot OAuth Setup - {{.UserType}} Authorization</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -11,16 +12,19 @@
             background: #0f0f23;
             color: #cccccc;
         }
+
         .container {
             background: #1a1a2e;
             padding: 30px;
             border-radius: 8px;
             border: 1px solid #333;
         }
+
         h1 {
             color: #9146ff;
             text-align: center;
         }
+
         .auth-btn {
             display: inline-block;
             background: #9146ff;
@@ -34,9 +38,11 @@
             display: block;
             width: 200px;
         }
+
         .auth-btn:hover {
             background: #772ce8;
         }
+
         .info {
             background: #2a2a3e;
             padding: 15px;
@@ -44,6 +50,15 @@
             margin: 20px 0;
             border-left: 4px solid #9146ff;
         }
+
+        .warning {
+            background: #3e2a2a;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            border-left: 4px solid #ff6b6b;
+        }
+
         code {
             background: #2a2a3e;
             padding: 2px 6px;
@@ -52,38 +67,53 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
-        <h1>🦇 Batybot OAuth Setup</h1>
+        <h1>🦇 Batybot OAuth Setup - {{.UserType}} Authorization</h1>
+
+        <div class="warning">
+            <h3>⚠️ Important: Login as {{.ExpectedUser}}</h3>
+            <p><strong>You must log in as the {{.UserType}} user: <code>{{.ExpectedUser}}</code></strong></p>
+            <p>Make sure you're logged into Twitch as <strong>{{.ExpectedUser}}</strong> before clicking the
+                authorization button.</p>
+        </div>
 
         <div class="info">
-            <h3>Welcome to Batybot Setup!</h3>
-            <p>To get started, you need to authorize Batybot to access your Twitch account. This will allow the bot to:</p>
+            <h3>{{.UserType}} Authorization Required</h3>
+            {{if eq .UserType "bot"}}
+            <p>This step authorizes the bot user (<code>{{.ExpectedUser}}</code>) to:</p>
             <ul>
                 <li>Read and send chat messages</li>
                 <li>Read and send whispers</li>
+                <li>Basic bot functionality</li>
             </ul>
-            <p><strong>Note:</strong> Make sure you have set the following environment variables:</p>
+            {{else if eq .UserType "broadcaster"}}
+            <p>This step authorizes the broadcaster (<code>{{.ExpectedUser}}</code>) to allow EventSub subscriptions
+                for:</p>
             <ul>
-                <li><code>TWITCH_CLIENT_ID</code> - Your Twitch application client ID</li>
-                <li><code>TWITCH_CLIENT_SECRET</code> - Your Twitch application client secret</li>
-                <li><code>TWITCH_USER</code> - The username the bot will use</li>
-                <li><code>TWITCH_CHANNEL</code> - The channel the bot will join</li>
+                <li>Subscription events (new subs, gift subs, resubs)</li>
+                <li>Follow events</li>
+                <li>Bits/Cheer events</li>
+                <li>Chat notifications</li>
             </ul>
+            {{end}}
         </div>
 
-        <a href="{{.AuthURL}}" class="auth-btn">🔗 Authorize with Twitch</a>
+        <a href="{{.AuthURL}}" class="auth-btn">🔗 Authorize {{.UserType}}</a>
 
         <div class="info">
             <p><strong>What happens next?</strong></p>
             <ol>
                 <li>Click the authorize button above</li>
-                <li>Log in to Twitch and authorize the application</li>
+                <li><strong>Make sure you're logged in as {{.ExpectedUser}}</strong></li>
+                <li>Authorize the application permissions</li>
                 <li>You'll be redirected back here with your tokens</li>
-                <li>The bot will automatically start and connect to chat!</li>
+                <li>{{if eq .UserType "bot"}}The bot will be ready for chat functionality{{else}}EventSub subscriptions
+                    will be enabled{{end}}</li>
             </ol>
         </div>
     </div>
 </body>
-</html>
 
+</html>

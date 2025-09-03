@@ -9,17 +9,19 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/nicklaw5/helix/v2"
+	helix "github.com/nicklaw5/helix/v2"
 )
 
 type Token struct{ helix.AccessCredentials }
 
 type server struct {
 	http.Server
-	mux    *http.ServeMux
-	listen string
-	code   string
-	done   chan bool
+	mux          *http.ServeMux
+	listen       string
+	code         string
+	done         chan bool
+	tokenType    TokenType
+	expectedUser string
 }
 
 //go:embed *.html.tmpl
@@ -54,7 +56,7 @@ func (s *server) error(w http.ResponseWriter, r *http.Request) {
 	s.showTemplate(w, "error", "error", data)
 }
 
-func (s *server) indexHandler(authURL string) func(w http.ResponseWriter, r *http.Request) {
+func (s *server) indexHandler(authURL, userType, expectedUser string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if errMsg := q.Get("error"); errMsg != "" {
@@ -63,9 +65,13 @@ func (s *server) indexHandler(authURL string) func(w http.ResponseWriter, r *htt
 		}
 
 		data := struct {
-			AuthURL string
+			AuthURL      string
+			UserType     string
+			ExpectedUser string
 		}{
-			AuthURL: authURL,
+			AuthURL:      authURL,
+			UserType:     userType,
+			ExpectedUser: expectedUser,
 		}
 
 		s.showTemplate(w, "index", "index", data)
@@ -110,7 +116,7 @@ func (s *server) callbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	config := GetConfig()
-	token, err := getUserToken(config, s.code)
+	token, user, err := getUserToken(config, s.code)
 	if err != nil {
 		log.Errorf("Failed to get access token: %v", err)
 		q := r.URL.Query()
@@ -119,21 +125,34 @@ func (s *server) callbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokenStr, refresh, expires := token.get()
+	if user.Login != s.expectedUser {
+		log.Errorf("Wrong user authorized: expected %s, got %s", s.expectedUser, user.Login)
+		q := r.URL.Query()
+		q.Add("error", fmt.Sprintf("Wrong user: expected %s, got %s", s.expectedUser, user.Login))
+		http.Redirect(w, r, "/error?"+q.Encode(), http.StatusSeeOther)
+		return
+	}
 
+	tokenStr, refresh, expires := token.get()
 	expiresAt := parseExpiresTime(expires)
-	config.SetTokens(tokenStr, refresh, expiresAt)
+
+	config.SetTokens(s.tokenType, tokenStr, refresh, expiresAt, user.ID, user.Login)
+	log.Infof("Tokens(%d) stored for user: %s", s.tokenType, user.Login)
 
 	data := struct {
 		Token      string
 		Refresh    string
 		Expires    string
 		ExpiresRaw string
+		UserType   string
+		Username   string
 	}{
 		Token:      tokenStr,
 		Refresh:    refresh,
 		Expires:    expiresAt.Format(time.DateTime),
 		ExpiresRaw: expires,
+		UserType:   userType(s.tokenType),
+		Username:   user.Login,
 	}
 
 	s.showTemplate(w, "callback", "callback", data)
@@ -144,10 +163,10 @@ func (s *server) callbackHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-func (s *server) setupRoutes(authURL string) {
+func (s *server) setupRoutes(authURL, userType, expectedUser string) {
 	s.mux = http.NewServeMux()
 
-	s.mux.HandleFunc("/", s.indexHandler(authURL))
+	s.mux.HandleFunc("/", s.indexHandler(authURL, userType, expectedUser))
 	s.mux.HandleFunc("/health", s.healthHandler)
 	s.mux.HandleFunc("/error", s.error)
 	s.mux.HandleFunc("/callback", s.callbackHandler)
@@ -193,7 +212,7 @@ func oauthClientFlow(config *ConfigManager) error {
 	tokenStr, refresh, expires := token.get()
 
 	expiresAt := parseExpiresTime(expires)
-	config.SetTokens(tokenStr, refresh, expiresAt)
+	config.SetBotTokens(tokenStr, refresh, expiresAt, config.Twitch().User, config.Twitch().User)
 
 	return nil
 }
@@ -209,7 +228,7 @@ func getAppToken(config *ConfigManager) (*Token, error) {
 		return nil, fmt.Errorf("getAppToken: unable to set up helix client: %w", err)
 	}
 
-	r, err := client.RequestAppAccessToken(config.Twitch().Scopes)
+	r, err := client.RequestAppAccessToken(config.Twitch().Scopes.Bot)
 	if err != nil {
 		return nil, fmt.Errorf("getAppToken: unable to get user token: %w", err)
 	} else if r.ErrorStatus != 0 {
@@ -219,7 +238,15 @@ func getAppToken(config *ConfigManager) (*Token, error) {
 	return &Token{r.Data}, nil
 }
 
-func oauthCodeFlow(config *ConfigManager) error {
+func userType(tokenType TokenType) string {
+	if tokenType == BroadcasterTokenType {
+		return "broadcaster"
+	}
+
+	return "bot"
+}
+
+func oauthCodeFlow(config *ConfigManager, tokenType TokenType) error {
 	twitchConfig := config.Twitch()
 	serverConfig := config.Server()
 
@@ -227,7 +254,18 @@ func oauthCodeFlow(config *ConfigManager) error {
 	if serverConfig.VirtualHost != "" {
 		redirect = fmt.Sprintf("https://%s/callback", serverConfig.VirtualHost)
 	}
-	log.Debug("redirecting back to: ", redirect)
+
+	// assume bot, unless it's not
+	scopes := twitchConfig.Scopes.Bot
+	userType := userType(tokenType)
+	expectedUser := twitchConfig.User
+
+	if tokenType == BroadcasterTokenType {
+		scopes = twitchConfig.Scopes.Broadcaster
+		expectedUser = twitchConfig.Broadcaster
+	}
+
+	log.Infof("Starting OAuth flow for %s user (%s)", userType, expectedUser)
 
 	client, err := helix.NewClient(&helix.Options{
 		ClientID:    twitchConfig.ClientID,
@@ -239,13 +277,16 @@ func oauthCodeFlow(config *ConfigManager) error {
 
 	authURL := client.GetAuthorizationURL(&helix.AuthorizationURLParams{
 		ResponseType: "code",
-		Scopes:       config.Twitch().Scopes,
+		Scopes:       scopes,
+		State:        string(rune(tokenType)), // Pass auth type as state
 	})
 
 	s := server{
-		listen: ":" + serverConfig.OAuthPort,
+		listen:       ":" + serverConfig.OAuthPort,
+		tokenType:    tokenType,
+		expectedUser: expectedUser,
 	}
-	s.setupRoutes(authURL)
+	s.setupRoutes(authURL, userType, expectedUser)
 
 	if err := s.Start(); err != nil {
 		return fmt.Errorf("unable to start OAuth server: %w", err)
@@ -258,7 +299,34 @@ func oauthCodeFlow(config *ConfigManager) error {
 	return nil
 }
 
-func getUserToken(config *ConfigManager, code string) (*Token, error) {
+func oauthFlow(config *ConfigManager) error {
+	log.Info("Starting OAuth flow...")
+
+	if !config.IsValidTokens() {
+		log.Info("All tokens are valid, no authentication needed")
+		return nil
+	}
+
+	if !config.IsValidBotTokens() {
+		log.Info("Bot authentication required...")
+		if err := oauthCodeFlow(config, BotTokenType); err != nil {
+			return fmt.Errorf("bot auth failed: %w", err)
+		}
+		log.Info("Bot authentication successful!")
+	}
+
+	if !config.IsValidBroadcasterTokens() {
+		log.Info("Broadcaster authentication required...")
+		if err := oauthCodeFlow(config, BroadcasterTokenType); err != nil {
+			return fmt.Errorf("broadcaster auth failed: %w", err)
+		}
+		log.Info("Broadcaster authentication successful!")
+	}
+
+	return nil
+}
+
+func getUserToken(config *ConfigManager, code string) (*Token, *helix.User, error) {
 	twitchConfig := config.Twitch()
 	serverConfig := config.Server()
 
@@ -273,17 +341,27 @@ func getUserToken(config *ConfigManager, code string) (*Token, error) {
 		RedirectURI:  redirect,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("getUserToken: unable to set up client: %w", err)
+		return nil, nil, fmt.Errorf("getUserToken: unable to set up client: %w", err)
 	}
 
 	r, err := client.RequestUserAccessToken(code)
 	if err != nil {
-		return nil, fmt.Errorf("getUserToken: unable to get user token: %w", err)
+		return nil, nil, fmt.Errorf("getUserToken: unable to get user token: %w", err)
 	} else if r.ErrorStatus != 0 {
-		return nil, fmt.Errorf("getUserToken: invalid response: %v - %s", r.ErrorStatus, r.ErrorMessage)
+		return nil, nil, fmt.Errorf("getUserToken: invalid response: %v - %s", r.ErrorStatus, r.ErrorMessage)
 	}
 
-	return &Token{r.Data}, nil
+	client.SetUserAccessToken(r.Data.AccessToken)
+	user, err := client.GetUsers(&helix.UsersParams{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("getUserToken: unable to get user info: %w", err)
+	}
+
+	if len(user.Data.Users) == 0 {
+		return nil, nil, fmt.Errorf("getUserToken: no user data returned")
+	}
+
+	return &Token{r.Data}, &user.Data.Users[0], nil
 }
 
 func refreshTokens(config *ConfigManager, refreshToken string) (*Token, error) {

@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-    <title>Batybot - Authorization Complete</title>
+    <title>Batybot - {{.UserType}} Authorization Complete</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -11,6 +12,7 @@
             background: #0f0f23;
             color: #cccccc;
         }
+
         .container {
             background: #1a1a2e;
             padding: 30px;
@@ -18,9 +20,29 @@
             border: 1px solid #333;
             text-align: center;
         }
+
         h1 {
             color: #00ff00;
         }
+
+        .auth-btn {
+            display: inline-block;
+            background: #9146ff;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            text-align: center;
+            margin: 20px auto;
+            display: block;
+            width: 200px;
+        }
+
+        .auth-btn:hover {
+            background: #772ce8;
+        }
+
         .success {
             background: #2a4a2a;
             padding: 15px;
@@ -28,6 +50,7 @@
             margin: 20px 0;
             border-left: 4px solid #00ff00;
         }
+
         .token-info {
             background: #2a2a3e;
             padding: 15px;
@@ -35,6 +58,7 @@
             margin: 20px 0;
             text-align: left;
         }
+
         code {
             background: #1a1a1a;
             padding: 2px 6px;
@@ -44,27 +68,45 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
-        <h1>✅ Authorization Successful!</h1>
+        <h1>✅ {{.UserType}} Authorization Successful!</h1>
 
         <div class="success">
-            <h3>Batybot is now authorized and connecting...</h3>
-            <p>The bot should now be starting up and connecting to Twitch chat. Check your console for connection status.</p>
+            <h3>{{.Username}} ({{.UserType}}) is now authorized</h3>
+            {{if eq .UserType "bot"}}
+            <p>The bot user is authorized and can now connect to chat.</p>
+            {{else if eq .UserType "broadcaster"}}
+            <p>The broadcaster is authorized and EventSub subscriptions can now be created.</p>
+            {{end}}
         </div>
 
         <div class="token-info">
             <h3>Token Information (for your records):</h3>
+            <p><strong>User:</strong> {{.Username}} ({{.UserType}})</p>
             <p><strong>Expires:</strong> {{.Expires}}</p>
-            <p><strong>Scopes:</strong> chat:edit, chat:read, whispers:read, whispers:edit</p>
 
             <h4>Environment Variables (save these for future runs):</h4>
-            <p><code>TWITCH_TOKEN={{.Token}}</code></p>
-            <p><code>TWITCH_REFRESH={{.Refresh}}</code></p>
-            <p><code>TWITCH_EXPIRES={{.ExpiresRaw}}</code></p>
+            {{if eq .UserType "bot"}}
+            <p><code>TWITCH_BOT_TOKEN={{.Token}}</code></p>
+            <p><code>TWITCH_BOT_REFRESH={{.Refresh}}</code></p>
+            <p><code>TWITCH_BOT_EXPIRES={{.ExpiresRaw}}</code></p>
+            {{else if eq .UserType "broadcaster"}}
+            <p><code>TWITCH_BROADCASTER_TOKEN={{.Token}}</code></p>
+            <p><code>TWITCH_BROADCASTER_REFRESH={{.Refresh}}</code></p>
+            <p><code>TWITCH_BROADCASTER_EXPIRES={{.ExpiresRaw}}</code></p>
+            {{end}}
         </div>
 
-        <p><em>You can safely close this tab now. The bot will continue running in the background.</em></p>
+        {{if eq .UserType "bot"}}
+        <p><em>Next: You need to authorize as the broadcaster user.</em></p>
+        <a href="/?user_type=broadcaster" class="auth-btn">🔗 Go to broadcaster</a>
+        {{else if eq .UserType "broadcaster"}}
+        <p><em>Authorization complete!</em></p>
+        <p><em>You can safely close this tab now.</em></p>
+        {{end}}
     </div>
 </body>
+
 </html>

@@ -4,6 +4,7 @@ go 1.23.0
 
 require (
 	github.com/gempir/go-twitch-irc/v4 v4.2.0
+	github.com/joeyak/go-twitch-eventsub/v3 v3.0.0
 	github.com/knadh/koanf/parsers/json v1.0.0
 	github.com/knadh/koanf/parsers/yaml v1.1.0
 	github.com/knadh/koanf/providers/env v1.1.0
@@ -15,6 +16,7 @@ require (
 )
 
 require (
+	github.com/coder/websocket v1.8.12 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect

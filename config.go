@@ -24,11 +24,17 @@ type Config struct {
 }
 
 type TwitchConfig struct {
-	ClientID     string   `koanf:"client_id" validate:"required"`
-	ClientSecret string   `koanf:"client_secret" validate:"required"`
-	User         string   `koanf:"user" validate:"required"`
-	Channel      string   `koanf:"channel" validate:"required"`
-	Scopes       []string `koanf:"scopes"`
+	ClientID     string `koanf:"client_id" validate:"required"`
+	ClientSecret string `koanf:"client_secret" validate:"required"`
+	User         string `koanf:"user" validate:"required"`
+	Channel      string `koanf:"channel" validate:"required"`
+	Broadcaster  string `koanf:"broadcaster" validate:"required"`
+	Scopes       Scopes `koanf:"scopes"`
+}
+
+type Scopes struct {
+	Bot         []string `koanf:"bot"`
+	Broadcaster []string `koanf:"broadcaster"`
 }
 
 type ServerConfig struct {
@@ -45,10 +51,17 @@ type LoggingConfig struct {
 }
 
 type TokenStore struct {
-	mu           sync.RWMutex
+	mu                sync.RWMutex
+	BotTokens         UserTokens `json:"bot_tokens"`
+	BroadcasterTokens UserTokens `json:"broadcaster_tokens"`
+}
+
+type UserTokens struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token"`
 	ExpiresAt    time.Time `json:"expires_at"`
+	UserID       string    `json:"user_id"`
+	Username     string    `json:"username"`
 }
 
 type ConfigManager struct {
@@ -56,6 +69,13 @@ type ConfigManager struct {
 	tokens *TokenStore
 	koanf  *koanf.Koanf
 }
+
+type TokenType int
+
+const (
+	BotTokenType TokenType = iota
+	BroadcasterTokenType
+)
 
 var (
 	globalConfig *ConfigManager
@@ -84,7 +104,25 @@ func newConfigManager(cfg string) (*ConfigManager, error) {
 
 	defaults := Config{
 		Twitch: TwitchConfig{
-			Scopes: []string{"chat:edit", "chat:read", "whispers:read", "whispers:edit"},
+			Scopes: Scopes{
+				Bot: []string{
+					"chat:edit",
+					"chat:read",
+					"user:bot",
+					"user:read:chat",
+					"user:write:chat",
+					"whispers:edit",
+					"whispers:read",
+				},
+				Broadcaster: []string{
+					"bits:read",
+					"channel:bot",
+					"channel:read:subscriptions",
+					"moderator:read:followers",
+					"user:bot",
+					"user:read:chat",
+				},
+			},
 		},
 		Server: ServerConfig{
 			OAuthPort: "8080",
@@ -123,6 +161,7 @@ func newConfigManager(cfg string) (*ConfigManager, error) {
 			"BATYBOT_TWITCH_CLIENT_SECRET": "twitch.client_secret",
 			"BATYBOT_TWITCH_USER":          "twitch.user",
 			"BATYBOT_TWITCH_CHANNEL":       "twitch.channel",
+			"BATYBOT_TWITCH_BROADCASTER":   "twitch.broadcaster",
 			"BATYBOT_OAUTH_PORT":           "server.oauth_port",
 			"BATYBOT_VIRTUAL_HOST":         "server.virtual_host",
 			"BATYBOT_BOT_VERIFIED":         "bot.verified",
@@ -154,6 +193,17 @@ func newConfigManager(cfg string) (*ConfigManager, error) {
 	}, nil
 }
 
+func (u UserTokens) IsExpired() bool {
+	// Consider token expired if less than 10 minutes remain
+	return time.Now().After(u.ExpiresAt.Add(-10 * time.Minute))
+}
+
+func (u UserTokens) isValid() bool {
+	return u.AccessToken != "" &&
+		u.RefreshToken != "" &&
+		!u.IsExpired()
+}
+
 // validate required configuration fields
 func (c Config) validate() error {
 	if c.Twitch.ClientID == "" {
@@ -165,15 +215,17 @@ func (c Config) validate() error {
 	if c.Twitch.Channel == "" {
 		return fmt.Errorf("twitch.channel is required")
 	}
-
-	var hasTokens bool
-	tokens := &TokenStore{}
-	if err := tokens.LoadFromFile("tokens.json"); err == nil {
-		hasTokens = tokens.AccessToken != "" && tokens.RefreshToken != "" && !tokens.IsExpired()
+	if c.Twitch.Broadcaster == "" {
+		return fmt.Errorf("twitch.broadcaster is required")
 	}
 
-	if !hasTokens && c.Twitch.ClientSecret == "" {
-		return fmt.Errorf("twitch.client_secret is required for initial OAuth authorization")
+	tokens := &TokenStore{}
+	if err := tokens.LoadFromFile("tokens.json"); err != nil {
+		log.Infof("tokens.json not read: %v", err)
+	}
+
+	if (!tokens.BotTokens.isValid() || !tokens.BroadcasterTokens.isValid()) && c.Twitch.ClientSecret == "" {
+		return fmt.Errorf("twitch.client_secret is required for OAuth authorization")
 	}
 
 	return nil
@@ -195,38 +247,76 @@ func (cm *ConfigManager) Logging() LoggingConfig {
 	return cm.config.Logging
 }
 
-func (cm *ConfigManager) GetTokens() (accessToken, refreshToken string, expiresAt time.Time) {
+func (cm *ConfigManager) GetTokens(tokenType TokenType) UserTokens {
 	cm.tokens.mu.RLock()
 	defer cm.tokens.mu.RUnlock()
 
-	return cm.tokens.AccessToken, cm.tokens.RefreshToken, cm.tokens.ExpiresAt
+	switch tokenType {
+	case BotTokenType:
+		return cm.tokens.BotTokens
+	case BroadcasterTokenType:
+		return cm.tokens.BroadcasterTokens
+	}
+
+	log.Panicf("Invalid TokenType: %v", tokenType)
+	return UserTokens{}
 }
 
-func (cm *ConfigManager) SetTokens(accessToken, refreshToken string, expiresAt time.Time) {
+func (cm *ConfigManager) GetBotTokens() UserTokens {
+	return cm.GetTokens(BotTokenType)
+}
+
+func (cm *ConfigManager) GetBroadcasterTokens() UserTokens {
+	return cm.GetTokens(BroadcasterTokenType)
+}
+
+func (cm *ConfigManager) SetTokens(tokenType TokenType, accessToken, refreshToken string, expiresAt time.Time, userID, username string) {
 	cm.tokens.mu.Lock()
 	defer cm.tokens.mu.Unlock()
 
-	cm.tokens.AccessToken = accessToken
-	cm.tokens.RefreshToken = refreshToken
-	cm.tokens.ExpiresAt = expiresAt
+	var token *UserTokens
+	switch tokenType {
+	case BotTokenType:
+		token = &cm.tokens.BotTokens
+	case BroadcasterTokenType:
+		token = &cm.tokens.BroadcasterTokens
+	default:
+		log.Panicf("Invalid TokenType: %v", tokenType)
+	}
+
+	token.AccessToken = accessToken
+	token.RefreshToken = refreshToken
+	token.ExpiresAt = expiresAt
+	token.UserID = userID
+	token.Username = username
 
 	if err := cm.tokens.saveToFile("tokens.json"); err != nil {
 		log.Warnf("Failed to save tokens to file: %v", err)
 	}
 }
 
-func (cm *ConfigManager) HasValidTokens() bool {
-	cm.tokens.mu.RLock()
-	defer cm.tokens.mu.RUnlock()
-
-	return cm.tokens.AccessToken != "" &&
-		cm.tokens.RefreshToken != "" &&
-		!cm.tokens.IsExpired()
+func (cm *ConfigManager) SetBotTokens(accessToken, refreshToken string, expiresAt time.Time, userID, username string) {
+	cm.SetTokens(BotTokenType, accessToken, refreshToken, expiresAt, userID, username)
 }
 
-func (ts *TokenStore) IsExpired() bool {
-	// Consider token expired if less than 10 minutes remain
-	return time.Now().After(ts.ExpiresAt.Add(-10 * time.Minute))
+func (cm *ConfigManager) SetBroadcasterTokens(accessToken, refreshToken string, expiresAt time.Time, userID, username string) {
+	cm.SetTokens(BroadcasterTokenType, accessToken, refreshToken, expiresAt, userID, username)
+}
+
+func (cm *ConfigManager) IsValidTokens() bool {
+	return cm.IsValidBotTokens() && cm.IsValidBroadcasterTokens()
+}
+
+func (cm *ConfigManager) IsValidBotTokens() bool {
+	cm.tokens.mu.RLock()
+	defer cm.tokens.mu.RUnlock()
+	return cm.tokens.BotTokens.isValid()
+}
+
+func (cm *ConfigManager) IsValidBroadcasterTokens() bool {
+	cm.tokens.mu.RLock()
+	defer cm.tokens.mu.RUnlock()
+	return cm.tokens.BroadcasterTokens.isValid()
 }
 
 func (ts *TokenStore) LoadFromFile(filename string) error {
@@ -296,9 +386,10 @@ func jsonUnmarshalImpl(data []byte, v any) error {
 
 // String returns a safe string representation of the config (without secrets)
 func (cm *ConfigManager) String() string {
-	return fmt.Sprintf("Config{Twitch.User: %s, Twitch.Channel: %s, Server.OAuthPort: %s, Bot.Verified: %t}",
+	return fmt.Sprintf("Config{Twitch.User: %s, Twitch.Channel: %s, Twitch.Broadcaster: %s, Server.OAuthPort: %s, Bot.Verified: %t}",
 		cm.config.Twitch.User,
 		cm.config.Twitch.Channel,
+		cm.config.Twitch.Broadcaster,
 		cm.config.Server.OAuthPort,
 		cm.config.Bot.Verified)
 }

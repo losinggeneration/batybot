@@ -10,8 +10,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gempir/go-twitch-irc/v4"
+	irc "github.com/gempir/go-twitch-irc/v4"
 	"github.com/sirupsen/logrus"
+)
+
+type refreshControl int
+
+const (
+	refreshControlStop     = 1
+	refreshControlContinue = 2
 )
 
 var log *logrus.Logger
@@ -24,7 +31,7 @@ func prefixToken(token string) string {
 	return "oauth:" + token
 }
 
-func setup() (*twitch.Client, *ConfigManager) {
+func setup() (*irc.Client, *ConfigManager) {
 	log = logrus.New()
 
 	var cfg string
@@ -49,26 +56,20 @@ func setup() (*twitch.Client, *ConfigManager) {
 
 	log.Info("Starting Batybot...")
 
-	if !config.HasValidTokens() {
-		log.Info("Starting need to get toke...")
-
-		if err := oauthCodeFlow(config); err != nil {
-			log.Fatalf("Auth failed: %v", err)
-		}
-
-		log.Info("Authorization successful!")
+	if err := oauthFlow(config); err != nil {
+		log.Fatalf("Auth failed: %v", err)
 	}
 
-	accessToken, _, expiresAt := config.GetTokens()
-	log.Debugf("Token expires at: %v", expiresAt)
+	token := config.GetBotTokens()
+	log.Debugf("Bot token expires at: %v", token.ExpiresAt)
 
-	client := twitch.NewClient("batybot", prefixToken(accessToken))
+	client := irc.NewClient("batybot", prefixToken(token.AccessToken))
 
 	if config.Bot().Verified {
-		client.SetJoinRateLimiter(twitch.CreateVerifiedRateLimiter())
+		client.SetJoinRateLimiter(irc.CreateVerifiedRateLimiter())
 		log.Info("Using verified bot rate limiter")
 	} else {
-		client.SetJoinRateLimiter(twitch.CreateDefaultRateLimiter())
+		client.SetJoinRateLimiter(irc.CreateDefaultRateLimiter())
 		log.Info("Using default rate limiter")
 	}
 
@@ -89,10 +90,21 @@ func main() {
 	twitchConfig := config.Twitch()
 	setupEventHandlers(client, twitchConfig.User)
 
-	wg.Add(1)
+	esm := NewEventSubManager(client, config)
+	if err := esm.Start(); err != nil {
+		log.Warnf("Failed to start EventSub manager: %v", err)
+		log.Info("Continuing without EventSub support...")
+	}
+
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		tokenRefreshWatch(ctx, client, config)
+		tokenRefreshWatch(ctx, client, config, BotTokenType)
+	}()
+
+	go func() {
+		defer wg.Done()
+		tokenRefreshWatch(ctx, client, config, BroadcasterTokenType)
 	}()
 
 	client.Join(twitchConfig.Channel)
@@ -117,7 +129,7 @@ func main() {
 	shutdown(client, &wg)
 }
 
-func shutdown(client *twitch.Client, wg *sync.WaitGroup) {
+func shutdown(client *irc.Client, wg *sync.WaitGroup) {
 	if client != nil {
 		log.Info("Disconnecting from Twitch...")
 		if err := client.Disconnect(); err != nil {
@@ -139,55 +151,27 @@ func shutdown(client *twitch.Client, wg *sync.WaitGroup) {
 	}
 }
 
-type refreshControl int
+func tokenDelay(ctx context.Context, config *ConfigManager, tokenType TokenType) refreshControl {
+	token := config.GetTokens(tokenType)
 
-const (
-	refreshControlStop     = 1
-	refreshControlContinue = 2
-)
+	until := time.Until(getRefreshTime(token))
+	log.Debugf("Waiting %v before refreshing token that expires at %s", until, token.ExpiresAt)
 
-func tokenDelay(ctx context.Context, config *ConfigManager) refreshControl {
-	_, _, expiresAt := config.GetTokens()
-	if time.Now().After(expiresAt) {
-		log.Warnf("refresh token is already expired at %s", expiresAt)
-	}
-
-	// Refresh when 10 minutes are left (or immediately if already expired)
-	refreshTime := expiresAt.Add(-10 * time.Minute)
-	if refreshTime.Before(time.Now()) {
-		refreshTime = time.Now()
-	}
-
-	until := time.Until(refreshTime)
-	log.Debugf("Waiting %v before refreshing token that expires at %s", until, expiresAt)
-
-	select {
-	case <-ctx.Done():
-		log.Info("Token refresh routine stopping during wait")
-		return refreshControlStop
-	case <-time.After(until):
-	}
-
-	return refreshControlContinue
+	return delay(ctx, until)
 }
 
-func tokenRefresh(ctx context.Context, client *twitch.Client, config *ConfigManager) refreshControl {
+func tokenRefresh(ctx context.Context, client *irc.Client, config *ConfigManager, tokenType TokenType) refreshControl {
 	log.Info("Refreshing token...")
 
-	_, refreshToken, _ := config.GetTokens()
-	newTokens, err := refreshTokens(config, refreshToken)
+	token := config.GetTokens(tokenType)
+	newTokens, err := refreshTokens(config, token.RefreshToken)
 	if err != nil {
 		log.Errorf("Failed to refresh token: %v", err)
-		select {
-		case <-ctx.Done():
-			return refreshControlStop
-		case <-time.After(30 * time.Second):
-			return refreshControlContinue
-		}
+		return delay(ctx, 30*time.Second)
 	}
 
 	accessToken, refreshToken, expiresAt := newTokens.get()
-	config.SetTokens(accessToken, refreshToken, parseExpiresTime(expiresAt))
+	config.SetTokens(tokenType, accessToken, refreshToken, parseExpiresTime(expiresAt), token.UserID, token.Username)
 
 	client.SetIRCToken(prefixToken(accessToken))
 
@@ -197,7 +181,27 @@ func tokenRefresh(ctx context.Context, client *twitch.Client, config *ConfigMana
 	return refreshControlContinue
 }
 
-func tokenRefreshWatch(ctx context.Context, client *twitch.Client, config *ConfigManager) {
+// getRefreshTime when 10 minutes are left (or immediately if already expired)
+func getRefreshTime(token UserTokens) time.Time {
+	if token.IsExpired() {
+		return time.Now()
+	}
+
+	return token.ExpiresAt.Add(-10 * time.Minute)
+}
+
+func delay(ctx context.Context, d time.Duration) refreshControl {
+	select {
+	case <-ctx.Done():
+		log.Info("delay stopping during wait")
+		return refreshControlStop
+	case <-time.After(d):
+	}
+
+	return refreshControlContinue
+}
+
+func tokenRefreshWatch(ctx context.Context, client *irc.Client, config *ConfigManager, tokenType TokenType) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -206,11 +210,11 @@ func tokenRefreshWatch(ctx context.Context, client *twitch.Client, config *Confi
 		default:
 		}
 
-		if tokenDelay(ctx, config) == refreshControlStop {
+		if tokenDelay(ctx, config, tokenType) == refreshControlStop {
 			return
 		}
 
-		if tokenRefresh(ctx, client, config) == refreshControlStop {
+		if tokenRefresh(ctx, client, config, tokenType) == refreshControlStop {
 			return
 		}
 	}
