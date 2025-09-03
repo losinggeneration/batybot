@@ -58,7 +58,7 @@ func setupEventHandlers(client *twitch.Client, botUser string) {
 	})
 
 	client.OnWhisperMessage(func(message twitch.WhisperMessage) {
-		log.Infof("Whisper from %s: %s", message.User.DisplayName, message.Message)
+		log.Debugf("Whisper from %s: %s", message.User.DisplayName, message.Message)
 	})
 
 	client.OnUnsetMessage(func(message twitch.RawMessage) {
@@ -70,19 +70,19 @@ func setupEventHandlers(client *twitch.Client, botUser string) {
 
 		switch message.MsgID {
 		case "sub", "resub":
-			log.Infof("New subscriber: %s", message.User.DisplayName)
+			log.Debugf("New subscriber: %s", message.User.DisplayName)
 			client.Say(message.Channel, fmt.Sprintf("Welcome %s! Thanks for the sub! BatJAM", message.User.DisplayName))
 		case "subgift":
-			log.Infof("Gift sub from %s", message.User.DisplayName)
+			log.Debugf("Gift sub from %s", message.User.DisplayName)
 			client.Say(message.Channel, fmt.Sprintf("Thanks for the gift sub %s! BatPop", message.User.DisplayName))
 		case "raid":
 			if raiderCount, ok := message.MsgParams["msg-param-viewerCount"]; ok {
-				log.Infof("Raid from %s with %s viewers", message.User.DisplayName, raiderCount)
+				log.Debugf("Raid from %s with %s viewers", message.User.DisplayName, raiderCount)
 				client.Say(message.Channel, fmt.Sprintf("Welcome raiders from %s! BatJAM BatJAM BatJAM", message.User.DisplayName))
 			}
 		case "ritual":
 			if ritual, ok := message.MsgParams["msg-param-ritual-name"]; ok && ritual == "new_chatter" {
-				log.Infof("New chatter: %s", message.User.DisplayName)
+				log.Debugf("New chatter: %s", message.User.DisplayName)
 				client.Say(message.Channel, fmt.Sprintf("Welcome to chat %s! BatPls", message.User.DisplayName))
 			}
 		}
@@ -90,22 +90,22 @@ func setupEventHandlers(client *twitch.Client, botUser string) {
 
 	client.OnClearChatMessage(func(message twitch.ClearChatMessage) {
 		if message.TargetUserID != "" {
-			log.Infof("User %s was timed out/banned in %s", message.TargetUsername, message.Channel)
+			log.Debugf("User %s was timed out/banned in %s", message.TargetUsername, message.Channel)
 		} else {
-			log.Infof("Chat was cleared in %s", message.Channel)
+			log.Debugf("Chat was cleared in %s", message.Channel)
 		}
 	})
 
 	client.OnClearMessage(func(message twitch.ClearMessage) {
-		log.Infof("Message deleted in %s: %s", message.Channel, message.Message)
+		log.Debugf("Message deleted in %s: %s", message.Channel, message.Message)
 	})
 
 	client.OnSelfPartMessage(func(message twitch.UserPartMessage) {
-		log.Infof("Bot left channel: %s", message.Channel)
+		log.Debugf("Bot left channel: %s", message.Channel)
 	})
 
 	client.OnPingSent(func() {
-		log.Debug("Ping sent to Twitch")
+		log.Trace("Ping sent to Twitch")
 	})
 
 	client.OnGlobalUserStateMessage(func(message twitch.GlobalUserStateMessage) {
@@ -117,7 +117,7 @@ func setupEventHandlers(client *twitch.Client, botUser string) {
 	})
 
 	client.OnNoticeMessage(func(message twitch.NoticeMessage) {
-		log.Infof("Notice in %s [%s]: %s", message.Channel, message.MsgID, message.Message)
+		log.Debugf("Notice in %s [%s]: %s", message.Channel, message.MsgID, message.Message)
 
 		switch message.MsgID {
 		case "msg_banned":
@@ -130,11 +130,11 @@ func setupEventHandlers(client *twitch.Client, botUser string) {
 	})
 
 	client.OnPingMessage(func(message twitch.PingMessage) {
-		log.Debug("Received PING, responding with PONG")
+		log.Trace("Received PING, responding with PONG")
 	})
 
 	client.OnPongMessage(func(message twitch.PongMessage) {
-		log.Debug("Received PONG")
+		log.Trace("Received PONG")
 	})
 
 	client.OnRoomStateMessage(func(message twitch.RoomStateMessage) {
@@ -142,18 +142,18 @@ func setupEventHandlers(client *twitch.Client, botUser string) {
 	})
 
 	client.OnConnect(func() {
-		log.Info("Connected to Twitch!")
+		log.Debug("Connected to Twitch!")
 	})
 
 	client.OnReconnectMessage(func(message twitch.ReconnectMessage) {
-		log.Info("Received reconnect message from Twitch")
+		log.Debug("Received reconnect message from Twitch")
 	})
 
 	client.OnSelfJoinMessage(func(message twitch.UserJoinMessage) {
-		log.Infof("Bot joined channel: %s", message.Channel)
+		log.Debugf("Bot joined channel: %s", message.Channel)
 
 		if users, err := client.Userlist(message.Channel); err == nil {
-			log.Infof("Channel %s has %d users", message.Channel, len(users))
+			log.Debugf("Channel %s has %d users", message.Channel, len(users))
 		}
 	})
 }

@@ -44,7 +44,7 @@ func setup() (*irc.Client, *ConfigManager) {
 	}
 
 	if level := config.Logging().Level; level != "" {
-		log.Infof("Setting log level to %q", level)
+		log.Debugf("Setting log level to %q", level)
 		l, err := logrus.ParseLevel(level)
 		if err != nil {
 			log.Warnf("Invalid log level %q, using info", level)
@@ -67,10 +67,10 @@ func setup() (*irc.Client, *ConfigManager) {
 
 	if config.Bot().Verified {
 		client.SetJoinRateLimiter(irc.CreateVerifiedRateLimiter())
-		log.Info("Using verified bot rate limiter")
+		log.Debug("Using verified bot rate limiter")
 	} else {
 		client.SetJoinRateLimiter(irc.CreateDefaultRateLimiter())
-		log.Info("Using default rate limiter")
+		log.Debug("Using default rate limiter")
 	}
 
 	return client, config
@@ -119,7 +119,6 @@ func main() {
 	}()
 
 	log.Infof("Batybot started! Connected as %s in #%s", twitchConfig.User, twitchConfig.Channel)
-	log.Info("Press Ctrl+C to gracefully shutdown")
 
 	<-sigChan
 	log.Info("Shutdown signal received, shutting down...")

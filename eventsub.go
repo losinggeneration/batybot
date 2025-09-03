@@ -31,7 +31,7 @@ func NewEventSubManager(chatClient *irc.Client, config *ConfigManager) *EventSub
 }
 
 func (esm *EventSubManager) Start() error {
-	log.Info("Starting EventSub manager...")
+	log.Debug("Starting EventSub manager...")
 
 	esm.client = eventsub.NewClient()
 
@@ -43,7 +43,7 @@ func (esm *EventSubManager) Start() error {
 	esm.setupEventHandlers()
 
 	esm.client.OnWelcome(func(message eventsub.WelcomeMessage) {
-		log.Info("EventSub WebSocket connected")
+		log.Debug("EventSub WebSocket connected")
 
 		if err := esm.subscribeToEvents(broadcasterID, message.Payload.Session.ID); err != nil {
 			log.Errorf("Failed to subscribe to events: %v", err)
@@ -55,11 +55,11 @@ func (esm *EventSubManager) Start() error {
 	})
 
 	esm.client.OnKeepAlive(func(message eventsub.KeepAliveMessage) {
-		log.Debug("EventSub keepalive received")
+		log.Trace("EventSub keepalive received")
 	})
 
 	esm.client.OnReconnect(func(message eventsub.ReconnectMessage) {
-		log.Info("EventSub reconnect requested")
+		log.Debug("EventSub reconnect requested")
 	})
 
 	esm.wg.Add(1)
@@ -70,12 +70,12 @@ func (esm *EventSubManager) Start() error {
 		}
 	}()
 
-	log.Info("EventSub manager started successfully")
+	log.Debug("EventSub manager started successfully")
 	return nil
 }
 
 func (esm *EventSubManager) Stop() {
-	log.Info("Stopping EventSub manager...")
+	log.Debug("Stopping EventSub manager...")
 
 	esm.cancel()
 
@@ -86,7 +86,7 @@ func (esm *EventSubManager) Stop() {
 	}
 
 	esm.wg.Wait()
-	log.Info("EventSub manager stopped")
+	log.Debug("EventSub manager stopped")
 }
 
 // getBroadcasterID retrieves the broadcaster's user ID from their username
@@ -148,7 +148,7 @@ func (esm *EventSubManager) setupEventHandlers() {
 
 // subscribeToEvents subscribes to all desired EventSub events
 func (esm *EventSubManager) subscribeToEvents(broadcasterID, sessionID string) error {
-	log.Info("Subscribing to EventSub events...")
+	log.Debug("Subscribing to EventSub events...")
 
 	token := esm.config.GetBroadcasterTokens()
 	twitchConfig := esm.config.Twitch()
@@ -236,58 +236,58 @@ func (esm *EventSubManager) subscribeToEvents(broadcasterID, sessionID string) e
 		}
 	}
 
-	log.Info("EventSub subscription setup complete")
+	log.Debug("EventSub subscription setup complete")
 	return nil
 }
 
 func (esm *EventSubManager) handleChannelSubscribe(event eventsub.EventChannelSubscribe) {
-	log.Infof("New subscriber: %s (Tier: %s)", event.UserName, event.Tier)
+	log.Debugf("New subscriber: %s (Tier: %s)", event.UserName, event.Tier)
 }
 
 func (esm *EventSubManager) handleChannelSubscriptionGift(event eventsub.EventChannelSubscriptionGift) {
 	if event.IsAnonymous {
-		log.Infof("Anonymous gift sub: %d subs gifted (Tier: %s)", event.Total, event.Tier)
+		log.Debugf("Anonymous gift sub: %d subs gifted (Tier: %s)", event.Total, event.Tier)
 	} else {
-		log.Infof("Gift sub from %s: %d subs gifted (Tier: %s)", event.UserName, event.Total, event.Tier)
+		log.Debugf("Gift sub from %s: %d subs gifted (Tier: %s)", event.UserName, event.Total, event.Tier)
 	}
 }
 
 func (esm *EventSubManager) handleChannelSubscriptionMessage(event eventsub.EventChannelSubscriptionMessage) {
-	log.Infof("Sub message from %s (Tier: %s, Months: %d): %s",
+	log.Debugf("Sub message from %s (Tier: %s, Months: %d): %s",
 		event.UserName, event.Tier, event.CumulativeMonths, event.Message.Text)
 }
 
 func (esm *EventSubManager) handleChannelFollow(event eventsub.EventChannelFollow) {
-	log.Infof("New follower: %s (followed at: %s)", event.UserName, event.FollowedAt)
+	log.Debugf("New follower: %s (followed at: %s)", event.UserName, event.FollowedAt)
 }
 
 func (esm *EventSubManager) handleChannelRaid(event eventsub.EventChannelRaid) {
-	log.Infof("Raid from %s with %d viewers", event.FromBroadcasterUserName, event.Viewers)
+	log.Debugf("Raid from %s with %d viewers", event.FromBroadcasterUserName, event.Viewers)
 }
 
 func (esm *EventSubManager) handleChannelCheer(event eventsub.EventChannelCheer) {
 	if event.IsAnonymous {
-		log.Infof("Anonymous cheer: %d bits", event.Bits)
+		log.Debugf("Anonymous cheer: %d bits", event.Bits)
 	} else {
-		log.Infof("Cheer from %s: %d bits - %s", event.UserName, event.Bits, event.Message)
+		log.Debugf("Cheer from %s: %d bits - %s", event.UserName, event.Bits, event.Message)
 	}
 }
 
 func (esm *EventSubManager) handleChannelUpdate(event eventsub.EventChannelUpdate) {
-	log.Infof("Channel updated - Title: %s, Category: %s", event.Title, event.CategoryName)
+	log.Debugf("Channel updated - Title: %s, Category: %s", event.Title, event.CategoryName)
 }
 
 func (esm *EventSubManager) handleStreamOnline(event eventsub.EventStreamOnline) {
-	log.Infof("Stream went online - Type: %s, Started at: %s", event.Type, event.StartedAt)
+	log.Debugf("Stream went online - Type: %s, Started at: %s", event.Type, event.StartedAt)
 }
 
 func (esm *EventSubManager) handleStreamOffline(event eventsub.EventStreamOffline) {
-	log.Infof("Stream went offline")
+	log.Debugf("Stream went offline")
 }
 
 func (esm *EventSubManager) handleChannelChatNotification(event eventsub.EventChannelChatNotification) {
 	prefix := "handleChannelChatNotification"
-	log.Infof("%s Chat notification - Type: %s, System: %s", prefix, event.NoticeType, event.SystemMessage)
+	log.Debugf("%s Chat notification - Type: %s, System: %s", prefix, event.NoticeType, event.SystemMessage)
 
 	twitchConfig := esm.config.Twitch()
 
@@ -321,7 +321,7 @@ func (esm *EventSubManager) handleChannelChatNotification(event eventsub.EventCh
 			log.Debugf(twitchConfig.Channel, message)
 		}
 	case "announcement":
-		log.Infof("Announcement from %s: %s", event.ChatterUserName, event.Message.Text)
+		log.Debugf("Announcement from %s: %s", event.ChatterUserName, event.Message.Text)
 	}
 }
 

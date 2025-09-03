@@ -150,7 +150,7 @@ func newConfigManager(cfg string) (*ConfigManager, error) {
 		}
 
 		if err := k.Load(file.Provider(configFile), parser); err == nil {
-			log.Infof("Loaded configuration from %s", configFile)
+			log.Debugf("Loaded configuration from %s", configFile)
 			break
 		}
 	}

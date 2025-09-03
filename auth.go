@@ -137,7 +137,7 @@ func (s *server) callbackHandler(w http.ResponseWriter, r *http.Request) {
 	expiresAt := parseExpiresTime(expires)
 
 	config.SetTokens(s.tokenType, tokenStr, refresh, expiresAt, user.ID, user.Login)
-	log.Infof("Tokens(%d) stored for user: %s", s.tokenType, user.Login)
+	log.Debugf("Tokens(%d) stored for user: %s", s.tokenType, user.Login)
 
 	data := struct {
 		Token      string
@@ -265,7 +265,7 @@ func oauthCodeFlow(config *ConfigManager, tokenType TokenType) error {
 		expectedUser = twitchConfig.Broadcaster
 	}
 
-	log.Infof("Starting OAuth flow for %s user (%s)", userType, expectedUser)
+	log.Debugf("Starting OAuth flow for %s user (%s)", userType, expectedUser)
 
 	client, err := helix.NewClient(&helix.Options{
 		ClientID:    twitchConfig.ClientID,
@@ -300,27 +300,27 @@ func oauthCodeFlow(config *ConfigManager, tokenType TokenType) error {
 }
 
 func oauthFlow(config *ConfigManager) error {
-	log.Info("Starting OAuth flow...")
+	log.Debug("Starting OAuth flow...")
 
 	if !config.IsValidTokens() {
-		log.Info("All tokens are valid, no authentication needed")
+		log.Debug("All tokens are valid, no authentication needed")
 		return nil
 	}
 
 	if !config.IsValidBotTokens() {
-		log.Info("Bot authentication required...")
+		log.Debug("Bot authentication required...")
 		if err := oauthCodeFlow(config, BotTokenType); err != nil {
 			return fmt.Errorf("bot auth failed: %w", err)
 		}
-		log.Info("Bot authentication successful!")
+		log.Debug("Bot authentication successful!")
 	}
 
 	if !config.IsValidBroadcasterTokens() {
-		log.Info("Broadcaster authentication required...")
+		log.Debug("Broadcaster authentication required...")
 		if err := oauthCodeFlow(config, BroadcasterTokenType); err != nil {
 			return fmt.Errorf("broadcaster auth failed: %w", err)
 		}
-		log.Info("Broadcaster authentication successful!")
+		log.Debug("Broadcaster authentication successful!")
 	}
 
 	return nil
