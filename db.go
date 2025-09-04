@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -137,6 +138,7 @@ func (d *DB) getTotals() (*UserTotals, error) {
 }
 
 func (d *DB) addUser(username string, totals UserTotals) error {
+	username = strings.ToLower(username)
 	return d.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte("users"))
 		var current UserTotals
@@ -162,6 +164,7 @@ func (d *DB) addUser(username string, totals UserTotals) error {
 }
 
 func (d *DB) addRaid(username string, t *time.Time) error {
+	username = strings.ToLower(username)
 	if t == nil {
 		t = ptr(time.Now())
 	}
@@ -176,6 +179,7 @@ func (d *DB) addRaid(username string, t *time.Time) error {
 }
 
 func (d *DB) addFollow(username string, t *time.Time) error {
+	username = strings.ToLower(username)
 	if t == nil {
 		t = ptr(time.Now())
 	}
