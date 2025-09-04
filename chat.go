@@ -1,47 +1,18 @@
 package main
 
 import (
-	"fmt"
 	"strings"
-	"time"
 
 	"github.com/gempir/go-twitch-irc/v4"
 )
 
 func setupEventHandlers(client *twitch.Client, botUser string) {
-	lastMention := time.Now()
-
 	client.OnPrivateMessage(func(message twitch.PrivateMessage) {
 		log.Debugln(message.Channel, message.User.Name, message.Message)
 
 		// Skip messages from the bot itself
 		if strings.EqualFold(message.User.Name, botUser) {
 			return
-		}
-
-		msg := strings.ToLower(message.Message)
-		switch {
-		case strings.Contains(msg, "batjam"):
-			client.Say(message.Channel, "BatJAM BatJAM BatJAM")
-		case strings.Contains(msg, "batpop"):
-			client.Say(message.Channel, "BatPop BatPop BatPop")
-		case strings.HasSuffix(msg, "batg"):
-			client.Say(message.Channel, "very interesting BatG")
-		}
-
-		if message.User.Badges["subscriber"] != 0 {
-			log.Debugf("Message from subscriber: %s", message.User.DisplayName)
-		}
-		if message.User.Badges["moderator"] != 0 {
-			log.Debugf("Message from moderator: %s", message.User.DisplayName)
-		}
-		if message.User.Badges["broadcaster"] != 0 {
-			log.Debugf("Message from broadcaster: %s", message.User.DisplayName)
-		}
-
-		if strings.Contains(msg, "batybot") && time.Since(lastMention) > 5*time.Minute {
-			lastMention = time.Now()
-			client.Say(message.Channel, "What? No, I'm awake BatPls")
 		}
 	})
 
@@ -67,25 +38,6 @@ func setupEventHandlers(client *twitch.Client, botUser string) {
 
 	client.OnUserNoticeMessage(func(message twitch.UserNoticeMessage) {
 		log.Debugf("User notice: %s in %s - %s", message.MsgID, message.Channel, message.SystemMsg)
-
-		switch message.MsgID {
-		case "sub", "resub":
-			log.Debugf("New subscriber: %s", message.User.DisplayName)
-			client.Say(message.Channel, fmt.Sprintf("Welcome %s! Thanks for the sub! BatJAM", message.User.DisplayName))
-		case "subgift":
-			log.Debugf("Gift sub from %s", message.User.DisplayName)
-			client.Say(message.Channel, fmt.Sprintf("Thanks for the gift sub %s! BatPop", message.User.DisplayName))
-		case "raid":
-			if raiderCount, ok := message.MsgParams["msg-param-viewerCount"]; ok {
-				log.Debugf("Raid from %s with %s viewers", message.User.DisplayName, raiderCount)
-				client.Say(message.Channel, fmt.Sprintf("Welcome raiders from %s! BatJAM BatJAM BatJAM", message.User.DisplayName))
-			}
-		case "ritual":
-			if ritual, ok := message.MsgParams["msg-param-ritual-name"]; ok && ritual == "new_chatter" {
-				log.Debugf("New chatter: %s", message.User.DisplayName)
-				client.Say(message.Channel, fmt.Sprintf("Welcome to chat %s! BatPls", message.User.DisplayName))
-			}
-		}
 	})
 
 	client.OnClearChatMessage(func(message twitch.ClearChatMessage) {
