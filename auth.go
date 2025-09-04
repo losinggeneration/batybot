@@ -302,7 +302,7 @@ func oauthCodeFlow(config *ConfigManager, tokenType TokenType) error {
 func oauthFlow(config *ConfigManager) error {
 	log.Debug("Starting OAuth flow...")
 
-	if !config.IsValidTokens() {
+	if config.IsValidTokens() {
 		log.Debug("All tokens are valid, no authentication needed")
 		return nil
 	}
