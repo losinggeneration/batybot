@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sync"
 	"time"
@@ -40,6 +41,7 @@ type Scopes struct {
 type ServerConfig struct {
 	OAuthPort   string `koanf:"oauth_port" validate:"required"`
 	VirtualHost string `koanf:"virtual_host"`
+	DataPath    string `koanf:"data_path"`
 }
 
 type BotConfig struct {
@@ -164,6 +166,7 @@ func newConfigManager(cfg string) (*ConfigManager, error) {
 			"BATYBOT_TWITCH_BROADCASTER":   "twitch.broadcaster",
 			"BATYBOT_OAUTH_PORT":           "server.oauth_port",
 			"BATYBOT_VIRTUAL_HOST":         "server.virtual_host",
+			"BATYBOT_DATA_PATH":            "server.data_path",
 			"BATYBOT_BOT_VERIFIED":         "bot.verified",
 			"BATYBOT_LOG_LEVEL":            "logging.level",
 		}[s]
@@ -182,7 +185,7 @@ func newConfigManager(cfg string) (*ConfigManager, error) {
 
 	tokens := &TokenStore{}
 
-	if err := tokens.LoadFromFile("tokens.json"); err != nil {
+	if err := tokens.LoadFromFile(path.Join(config.Server.DataPath, "tokens.json")); err != nil {
 		log.Debug("No existing token file found or failed to load")
 	}
 
@@ -220,8 +223,8 @@ func (c Config) validate() error {
 	}
 
 	tokens := &TokenStore{}
-	if err := tokens.LoadFromFile("tokens.json"); err != nil {
-		log.Infof("tokens.json not read: %v", err)
+	if err := tokens.LoadFromFile(path.Join(c.Server.DataPath, "tokens.json")); err != nil {
+		log.Infof(c.Server.DataPath+"/tokens.json not read: %v", err)
 	}
 
 	if (!tokens.BotTokens.isValid() || !tokens.BroadcasterTokens.isValid()) && c.Twitch.ClientSecret == "" {
@@ -290,7 +293,7 @@ func (cm *ConfigManager) SetTokens(tokenType TokenType, accessToken, refreshToke
 	token.UserID = userID
 	token.Username = username
 
-	if err := cm.tokens.saveToFile("tokens.json"); err != nil {
+	if err := cm.tokens.saveToFile(path.Join(cm.config.Server.DataPath, "tokens.json")); err != nil {
 		log.Warnf("Failed to save tokens to file: %v", err)
 	}
 }

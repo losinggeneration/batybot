@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"os/signal"
+	"path"
 	"strings"
 	"sync"
 	"syscall"
@@ -83,7 +84,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bdb, err := bolt.Open("data.db", 0600, nil)
+	bdb, err := bolt.Open(path.Join(config.Server().DataPath, "data.db"), 0600, nil)
 	if err != nil {
 		log.Error(err)
 		defer os.Exit(1)
