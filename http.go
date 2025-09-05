@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"net/http"
 
 	"github.com/shopspring/decimal"
@@ -53,6 +54,12 @@ func (s *dashboardServer) Start() error {
 
 	s.mux.HandleFunc("/", s.indexHandler)
 	s.mux.HandleFunc("/health", s.healthHandler)
+
+	staticFS, err := fs.Sub(embedFS, "static")
+	if err != nil {
+		return fmt.Errorf("failed to load static files: %w", err)
+	}
+	s.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	s.Handler = s.mux
 	s.Addr = ":8080"

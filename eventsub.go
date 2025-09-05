@@ -328,10 +328,12 @@ func (esm *EventSubManager) handleChannelUpdate(event eventsub.EventChannelUpdat
 
 func (esm *EventSubManager) handleStreamOnline(event eventsub.EventStreamOnline) {
 	log.Debugf("Stream went online - Type: %s, Started at: %s", event.Type, event.StartedAt)
+	esm.chatClient.Say(esm.config.Twitch().Channel, "!subresume")
 }
 
 func (esm *EventSubManager) handleStreamOffline(event eventsub.EventStreamOffline) {
 	log.Debugf("Stream went offline")
+	esm.chatClient.Say(esm.config.Twitch().Channel, "!subpause")
 }
 
 func (esm *EventSubManager) handleChannelChatNotification(event eventsub.EventChannelChatNotification) {

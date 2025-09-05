@@ -45,6 +45,19 @@
             font-size: 1.1rem;
         }
 
+        .goals-container {
+            text-align: center;
+            margin: 2rem 0;
+        }
+
+        .goals-image {
+            max-width: 80%;
+            /* keeps it nicely contained */
+            height: auto;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -234,6 +247,10 @@
     <div class="container">
         <div class="header">
             <h1>🦇 Batybot Dashboard</h1>
+        </div>
+
+        <div class="goals-container">
+            <img src="/static/goals.png" alt="Stream Goals" class="goals-image">
         </div>
 
         <!-- Aggregate Stats Cards -->

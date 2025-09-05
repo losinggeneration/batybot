@@ -24,7 +24,7 @@ type authServer struct {
 	expectedUser string
 }
 
-//go:embed *.html.tmpl
+//go:embed *.html.tmpl static/*
 var embedFS embed.FS
 
 func loadEmbedFs(name string) (string, error) {
