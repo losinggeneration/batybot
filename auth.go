@@ -299,6 +299,21 @@ func oauthCodeFlow(config *ConfigManager, tokenType TokenType) error {
 	return nil
 }
 
+func tryRefresh(config *ConfigManager, token *UserTokens) bool {
+	if token == nil || token.RefreshToken == "" {
+		return false
+	}
+
+	t, err := refreshTokenWithRetry(config, *token)
+	if err != nil {
+		return false
+	}
+
+	*token = t
+
+	return true
+}
+
 func oauthFlow(config *ConfigManager) error {
 	log.Debug("Starting OAuth flow...")
 
@@ -307,7 +322,8 @@ func oauthFlow(config *ConfigManager) error {
 		return nil
 	}
 
-	if !config.IsValidBotTokens() {
+	t := config.GetBotTokens()
+	if !config.IsValidBotTokens() && !tryRefresh(config, &t) {
 		log.Debug("Bot authentication required...")
 		if err := oauthCodeFlow(config, BotTokenType); err != nil {
 			return fmt.Errorf("bot auth failed: %w", err)
@@ -315,13 +331,18 @@ func oauthFlow(config *ConfigManager) error {
 		log.Debug("Bot authentication successful!")
 	}
 
-	if !config.IsValidBroadcasterTokens() {
+	config.SetBotTokens(t.AccessToken, t.RefreshToken, t.ExpiresAt, t.UserID, t.Username)
+
+	t = config.GetBroadcasterTokens()
+	if !config.IsValidBroadcasterTokens() && !tryRefresh(config, &t) {
 		log.Debug("Broadcaster authentication required...")
 		if err := oauthCodeFlow(config, BroadcasterTokenType); err != nil {
 			return fmt.Errorf("broadcaster auth failed: %w", err)
 		}
 		log.Debug("Broadcaster authentication successful!")
 	}
+
+	config.SetBroadcasterTokens(t.AccessToken, t.RefreshToken, t.ExpiresAt, t.UserID, t.Username)
 
 	return nil
 }

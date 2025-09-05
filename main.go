@@ -184,6 +184,55 @@ func tokenDelay(ctx context.Context, config *ConfigManager, tokenType TokenType)
 	return delay(ctx, until)
 }
 
+func retryLoop(fn func() error) error {
+	var err error
+	for range 5 {
+		if err = fn(); err == nil {
+			return nil
+		}
+
+		time.Sleep(5 * time.Second)
+	}
+
+	return err
+}
+
+func refreshTokenWithRetry(config *ConfigManager, token UserTokens) (UserTokens, error) {
+	fn := func() error {
+		newToken, err := refreshToken(config, token)
+		if err != nil {
+			return err
+		}
+
+		token = newToken
+
+		return nil
+	}
+
+	if err := retryLoop(fn); err != nil {
+		return UserTokens{}, err
+	}
+
+	return token, nil
+}
+
+func refreshToken(config *ConfigManager, token UserTokens) (UserTokens, error) {
+	newTokens, err := refreshTokens(config, token.RefreshToken)
+	if err != nil {
+		log.Errorf("Failed to refresh token: %v", err)
+		return UserTokens{}, nil
+	}
+
+	accessToken, refreshToken, expiresAt := newTokens.get()
+	return UserTokens{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresAt:    parseExpiresTime(expiresAt),
+		UserID:       token.UserID,
+		Username:     token.Username,
+	}, nil
+}
+
 func tokenRefresh(ctx context.Context, client *irc.Client, config *ConfigManager, tokenType TokenType) refreshControl {
 	log.Info("Refreshing token...")
 
