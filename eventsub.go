@@ -306,6 +306,7 @@ func (esm *EventSubManager) handleChannelFollow(event eventsub.EventChannelFollo
 
 func (esm *EventSubManager) handleChannelRaid(event eventsub.EventChannelRaid) {
 	log.Debugf("Raid from %s with %d viewers", event.FromBroadcasterUserName, event.Viewers)
+	esm.chatClient.Say(esm.config.Twitch().Channel, "!subaddtime 30m")
 }
 
 func (esm *EventSubManager) handleChannelCheer(event eventsub.EventChannelCheer) {

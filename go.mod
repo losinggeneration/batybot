@@ -29,3 +29,5 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/sys v0.35.0 // indirect
 )
+
+replace github.com/joeyak/go-twitch-eventsub/v3 v3.0.0 => github.com/losinggeneration/go-twitch-eventsub/v3 v3.0.0-20250902215747-71d25c987a29
