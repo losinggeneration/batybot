@@ -119,8 +119,18 @@
             backdrop-filter: blur(10px);
             border: 1px solid rgba(145, 70, 255, 0.2);
             border-radius: 16px;
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: hidden;
             box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .table-container::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .table-container::-webkit-scrollbar-thumb {
+            background: rgba(145, 70, 255, 0.4);
+            border-radius: 4px;
         }
 
         .table-header {
