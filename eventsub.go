@@ -250,23 +250,29 @@ func (esm *EventSubManager) subscribeToEvents(broadcasterID, sessionID string) e
 
 func (esm *EventSubManager) handleChannelSubscribe(event eventsub.EventChannelSubscribe) {
 	log.Debugf("handleChannelSubscribe: New subscriber: %s (Tier: %s)", event.UserName, event.Tier)
-	var u UserTotals
-	switch event.Tier {
-	case SubTier1:
-		u.Tier1 = 1
-	case SubTier2:
-		u.Tier2 = 1
-	case SubTier3:
-		u.Tier3 = 1
-	}
 
 	// Don't double count gifted subs
 	if event.IsGift {
 		return
 	}
 
-	if err := esm.db.addUser(event.UserName, u); err != nil {
-		log.Errorf("handleChannelSubscribe: unable to add subscription: %s", err)
+	esm.addUser(event.UserName, event.Tier, 1)
+}
+
+func (esm *EventSubManager) addUser(username, tier string, total int64) {
+	var u UserTotals
+	switch tier {
+	case SubTier1:
+		u.Tier1 = total
+	case SubTier2:
+		u.Tier2 = total
+	case SubTier3:
+		u.Tier3 = total
+	}
+
+	if err := esm.db.addUser(username, u); err != nil {
+		log.Errorf("addUser: unable to add subscription: %s", err)
+		log.Errorf("addUser: unable to add %q subscription of %v %v", username, tier, total)
 	}
 }
 
@@ -279,20 +285,7 @@ func (esm *EventSubManager) handleChannelSubscriptionGift(event eventsub.EventCh
 		log.Debugf("handleChannelSubscriptionGift: Gift sub from %s: %d subs gifted (Tier: %s)", event.UserName, event.Total, event.Tier)
 	}
 
-	var u UserTotals
-	switch event.Tier {
-	case SubTier1:
-		u.Tier1 = int64(event.Total)
-	case SubTier2:
-		u.Tier2 = int64(event.Total)
-	case SubTier3:
-		u.Tier3 = int64(event.Total)
-	}
-
-	if err := esm.db.addUser(username, u); err != nil {
-		log.Errorf("handleChannelSubscriptionGift: unable to add subscription: %s", err)
-		log.Errorf("handleChannelSubscriptionGift: unable to add %q subscription of %v: %s", username, event.Tier, err)
-	}
+	esm.addUser(username, event.Tier, int64(event.Total))
 }
 
 func (esm *EventSubManager) handleChannelSubscriptionMessage(event eventsub.EventChannelSubscriptionMessage) {
@@ -347,33 +340,37 @@ func (esm *EventSubManager) handleChannelChatNotification(event eventsub.EventCh
 	case "sub":
 		if event.Sub != nil {
 			message := fmt.Sprintf("%s: Welcome %s! Thanks for the sub! BatJAM", prefix, event.ChatterUserName)
-			log.Debugf(twitchConfig.Channel, message)
+			log.Debug("handleChannelChatNotification: sub: ", twitchConfig.Channel, message)
 		}
 	case "resub":
+		if event.Resub.IsGift {
+			return
+		}
 		if event.Resub != nil {
 			message := fmt.Sprintf("%s Thanks for the resub %s! %d months strong! BatJAM",
 				prefix, event.ChatterUserName, event.Resub.CumulativeMonths)
-			log.Debugf(twitchConfig.Channel, message)
+			log.Debug("handleChannelChatNotification: resub: ", twitchConfig.Channel, message)
+			esm.addUser(event.ChatterUserName, event.Resub.SubTier, 1)
 		}
 	case "sub_gift":
 		if event.SubGift != nil {
 			message := fmt.Sprintf("%s Thanks %s for the gift sub! BatPop", prefix, event.ChatterUserName)
-			log.Debugf(twitchConfig.Channel, message)
+			log.Debug("handleChannelChatNotification: sub_gift: ", twitchConfig.Channel, message)
 		}
 	case "community_sub_gift":
 		if event.CommunitySubGift != nil {
 			message := fmt.Sprintf("%s Thanks %s for gifting %d subs! BatPop",
 				prefix, event.ChatterUserName, event.CommunitySubGift.Total)
-			log.Debugf(twitchConfig.Channel, message)
+			log.Debug("handleChannelChatNotification: community_sub_gift: ", twitchConfig.Channel, message)
 		}
 	case "raid":
 		if event.Raid != nil {
 			message := fmt.Sprintf("%s Welcome raiders from %s! BatJAM BatJAM BatJAM",
 				prefix, event.Raid.UserName)
-			log.Debugf(twitchConfig.Channel, message)
+			log.Debug("handleChannelChatNotification: raid: ", twitchConfig.Channel, message)
 		}
 	case "announcement":
-		log.Debugf("Announcement from %s: %s", event.ChatterUserName, event.Message.Text)
+		log.Debugf("handleChannelChatNotification: announcement: Announcement from %s: %s", event.ChatterUserName, event.Message.Text)
 	}
 }
 
