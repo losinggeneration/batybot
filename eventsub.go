@@ -260,6 +260,7 @@ func (esm *EventSubManager) handleChannelSubscribe(event eventsub.EventChannelSu
 }
 
 func (esm *EventSubManager) addUser(username, tier string, total int64) {
+	log.Debug("addUser: %s %s %v", username, tier, total)
 	var u UserTotals
 	switch tier {
 	case SubTier1:
