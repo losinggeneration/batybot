@@ -260,7 +260,7 @@ func (esm *EventSubManager) handleChannelSubscribe(event eventsub.EventChannelSu
 }
 
 func (esm *EventSubManager) addUser(username, tier string, total int64) {
-	log.Debug("addUser: %s %s %v", username, tier, total)
+	log.Debugf("addUser: %s %s %v", username, tier, total)
 	var u UserTotals
 	switch tier {
 	case SubTier1:
@@ -351,7 +351,7 @@ func (esm *EventSubManager) handleChannelChatNotification(event eventsub.EventCh
 			message := fmt.Sprintf("%s Thanks for the resub %s! %d months strong! BatJAM",
 				prefix, event.ChatterUserName, event.Resub.CumulativeMonths)
 			log.Debug("handleChannelChatNotification: resub: ", twitchConfig.Channel, message)
-			esm.addUser(event.ChatterUserName, event.Resub.SubTier, 1)
+			// esm.addUser(event.ChatterUserName, event.Resub.SubTier, 1)
 		}
 	case "sub_gift":
 		if event.SubGift != nil {
