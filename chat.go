@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gempir/go-twitch-irc/v4"
 )
 
-func setupEventHandlers(client *twitch.Client, botUser string) {
+func setupEventHandlers(client *twitch.Client, config *ConfigManager, botUser string) {
 	client.OnPrivateMessage(func(message twitch.PrivateMessage) {
 		log.Debugln("chat: PrivateMessage:", message.Channel, message.User.Name, message.Message)
 
@@ -99,6 +100,7 @@ func setupEventHandlers(client *twitch.Client, botUser string) {
 
 	client.OnReconnectMessage(func(message twitch.ReconnectMessage) {
 		log.Debug("chat: Reconnect: Received reconnect message from Twitch")
+		tokenRefresh(context.Background(), client, config, BotTokenType)
 	})
 
 	client.OnSelfJoinMessage(func(message twitch.UserJoinMessage) {

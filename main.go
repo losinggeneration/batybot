@@ -110,7 +110,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	twitchConfig := config.Twitch()
-	setupEventHandlers(client, twitchConfig.User)
+	setupEventHandlers(client, config, twitchConfig.User)
 
 	esm := NewEventSubManager(client, &db, config)
 	if err := esm.Start(); err != nil {
@@ -134,9 +134,24 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := client.Connect(); err != nil {
-			log.Errorf("Unable to connect: %v", err)
-			cancel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			if err := client.Connect(); err != nil {
+				log.Errorf("Unable to connect: %v", err)
+			}
+
+			tokenRefresh(ctx, client, config, BotTokenType)
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(10 * time.Second):
+			}
 		}
 	}()
 
