@@ -84,6 +84,17 @@ var (
 	configOnce   sync.Once
 )
 
+func (t TokenType) String() string {
+	switch t {
+	case BotTokenType:
+		return "ChatToken"
+	case BroadcasterTokenType:
+		return "BroadcasterToken"
+	}
+
+	return "UnknownToken"
+}
+
 // InitConfig initializes the global configuration manager
 func InitConfig(cfg string) (*ConfigManager, error) {
 	var err error

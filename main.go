@@ -195,7 +195,7 @@ func tokenDelay(ctx context.Context, config *ConfigManager, tokenType TokenType)
 	token := config.GetTokens(tokenType)
 
 	until := time.Until(getRefreshTime(token))
-	log.Debugf("Waiting %v before refreshing token that expires at %s", until, token.ExpiresAt)
+	log.Debugf("Waiting %v before refreshing %s that expires at %s", until, tokenType.String(), token.ExpiresAt)
 
 	return delay(ctx, until)
 }
@@ -250,7 +250,7 @@ func refreshToken(config *ConfigManager, token UserTokens) (UserTokens, error) {
 }
 
 func tokenRefresh(ctx context.Context, client *irc.Client, config *ConfigManager, tokenType TokenType) refreshControl {
-	log.Info("Refreshing token...")
+	log.Infof("Refreshing %s...", tokenType.String())
 
 	token := config.GetTokens(tokenType)
 	newTokens, err := refreshTokens(config, token.RefreshToken)
