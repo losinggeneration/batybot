@@ -110,7 +110,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	twitchConfig := config.Twitch()
-	setupEventHandlers(client, config, twitchConfig.User)
+	setupChatEventHandlers(client, config, twitchConfig.User)
 
 	esm := NewEventSubManager(client, &db, config)
 	if err := esm.Start(); err != nil {
@@ -262,7 +262,10 @@ func tokenRefresh(ctx context.Context, client *irc.Client, config *ConfigManager
 	accessToken, refreshToken, expiresAt := newTokens.get()
 	config.SetTokens(tokenType, accessToken, refreshToken, parseExpiresTime(expiresAt), token.UserID, token.Username)
 
-	client.SetIRCToken(prefixToken(accessToken))
+	switch tokenType {
+	case BotTokenType:
+		client.SetIRCToken(prefixToken(accessToken))
+	}
 
 	log.Info("Token refreshed successfully")
 	log.Debugf("New token expires at: %s", expiresAt)

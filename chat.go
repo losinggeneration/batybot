@@ -7,7 +7,7 @@ import (
 	"github.com/gempir/go-twitch-irc/v4"
 )
 
-func setupEventHandlers(client *twitch.Client, config *ConfigManager, botUser string) {
+func setupChatEventHandlers(client *twitch.Client, config *ConfigManager, botUser string) {
 	client.OnPrivateMessage(func(message twitch.PrivateMessage) {
 		log.Debugln("chat: PrivateMessage:", message.Channel, message.User.Name, message.Message)
 
