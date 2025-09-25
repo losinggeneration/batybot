@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	irc "github.com/gempir/go-twitch-irc/v4"
 	eventsub "github.com/joeyak/go-twitch-eventsub/v3"
@@ -73,8 +74,22 @@ func (esm *EventSubManager) Start() error {
 	esm.wg.Add(1)
 	go func() {
 		defer esm.wg.Done()
-		if err := esm.client.ConnectWithContext(esm.ctx); err != nil {
-			log.Errorf("Start: EventSub client error: %v", err)
+		for {
+			select {
+			case <-esm.ctx.Done():
+				return
+			default:
+			}
+
+			if err := esm.client.ConnectWithContext(esm.ctx); err != nil {
+				log.Errorf("Start: EventSub client error: %v", err)
+				select {
+				case <-esm.ctx.Done():
+					return
+				case <-time.After(5 * time.Second): // Slightly longer delay
+					continue
+				}
+			}
 		}
 	}()
 
