@@ -66,10 +66,13 @@ type UserTokens struct {
 	Username     string    `json:"username"`
 }
 
+type TokenRefreshHook func(tokenType TokenType, token UserTokens)
+
 type ConfigManager struct {
-	config *Config
-	tokens *TokenStore
-	koanf  *koanf.Koanf
+	config     *Config
+	tokens     *TokenStore
+	koanf      *koanf.Koanf
+	tokenHooks []TokenRefreshHook
 }
 
 type TokenType int
@@ -304,6 +307,10 @@ func (cm *ConfigManager) SetTokens(tokenType TokenType, accessToken, refreshToke
 	token.UserID = userID
 	token.Username = username
 
+	for _, hook := range cm.tokenHooks {
+		hook(tokenType, *token)
+	}
+
 	if err := cm.tokens.saveToFile(path.Join(cm.config.Server.DataPath, "tokens.json")); err != nil {
 		log.Warnf("Failed to save tokens to file: %v", err)
 	}
@@ -331,6 +338,10 @@ func (cm *ConfigManager) IsValidBroadcasterTokens() bool {
 	cm.tokens.mu.RLock()
 	defer cm.tokens.mu.RUnlock()
 	return cm.tokens.BroadcasterTokens.isValid()
+}
+
+func (cm *ConfigManager) SubscribeTokenRefresh(hook TokenRefreshHook) {
+	cm.tokenHooks = append(cm.tokenHooks, hook)
 }
 
 func (ts *TokenStore) LoadFromFile(filename string) error {
