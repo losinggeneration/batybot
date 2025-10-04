@@ -396,7 +396,7 @@ func refreshTokens(config *ConfigManager, refreshToken string) (*Token, error) {
 		return nil, fmt.Errorf("refreshToken: unable to set up client: %w", err)
 	}
 
-	log.Debugf("Attempting to refresh token with refresh token: %s...", refreshToken[:min(len(refreshToken), 10)])
+	log.Debug("Attempting to refresh token with refresh token...")
 
 	r, err := client.RefreshUserAccessToken(refreshToken)
 	if err != nil {
