@@ -42,59 +42,53 @@ func NewEventSubManager(chatClient *irc.Client, db *DB, config *ConfigManager) *
 func (esm *EventSubManager) Start() error {
 	log.Debug("Start: Starting EventSub manager...")
 
-	esm.client = eventsub.NewClient()
-
 	broadcasterID, err := esm.getBroadcasterID()
 	if err != nil {
 		return fmt.Errorf("Start: failed to get broadcaster ID: %w", err)
 	}
 
-	esm.setupEventHandlers()
-
-	esm.client.OnWelcome(func(message eventsub.WelcomeMessage) {
-		log.Debug("Start: OnWelcome: EventSub WebSocket connected")
-
-		if err := esm.subscribeToEvents(broadcasterID, message.Payload.Session.ID); err != nil {
-			log.Errorf("Start: OnWelcome: Failed to subscribe to events: %v", err)
-		}
-	})
-
-	esm.client.OnError(func(err error) {
-		log.Errorf("Start: onError: EventSub error: %v", err)
-	})
-
-	esm.client.OnKeepAlive(func(message eventsub.KeepAliveMessage) {
-		log.Trace("Start: onKeepAlive: EventSub keepalive received")
-	})
-
-	esm.client.OnReconnect(func(message eventsub.ReconnectMessage) {
-		log.Debug("Start: onReconnect: EventSub reconnect requested")
-	})
+	esm.client = eventsub.NewClient()
+	esm.setupEventHandlers(broadcasterID)
 
 	esm.wg.Add(1)
-	go func() {
-		defer esm.wg.Done()
-		for {
-			select {
-			case <-esm.ctx.Done():
-				return
-			default:
-			}
-
-			if err := esm.client.ConnectWithContext(esm.ctx); err != nil {
-				log.Errorf("Start: EventSub client error: %v", err)
-				select {
-				case <-esm.ctx.Done():
-					return
-				case <-time.After(5 * time.Second): // Slightly longer delay
-					continue
-				}
-			}
-		}
-	}()
+	go esm.connect(broadcasterID)
 
 	log.Debug("Start: EventSub manager started successfully")
 	return nil
+}
+
+// connect tries to create a connection to the EventSub WebSocket & will try
+// reconnecting on errors. It will recreate the client if more than 3 issues with
+// connecting happen. This loops forever or until the esm.ctx is Done().
+func (esm *EventSubManager) connect(broadcasterID string) {
+	defer esm.wg.Done()
+
+	errorCount := 0
+	for {
+		select {
+		case <-esm.ctx.Done():
+			return
+		default:
+		}
+
+		// if we've errored 3, let's recreate the client.
+		if errorCount > 3 {
+			esm.client = eventsub.NewClient()
+			esm.setupEventHandlers(broadcasterID)
+			errorCount = 0
+		}
+
+		if err := esm.client.ConnectWithContext(esm.ctx); err != nil {
+			log.Errorf("Start: EventSub connect error: %v", err)
+			select {
+			case <-esm.ctx.Done():
+				return
+			case <-time.After(5 * time.Second): // Slightly longer delay
+				errorCount++
+				continue
+			}
+		}
+	}
 }
 
 func (esm *EventSubManager) Stop() {
@@ -145,8 +139,28 @@ func (esm *EventSubManager) getBroadcasterID() (string, error) {
 }
 
 // setupEventHandlers configures all the event handlers we care about
-func (esm *EventSubManager) setupEventHandlers() {
+func (esm *EventSubManager) setupEventHandlers(broadcasterID string) {
 	log.Debug("setupEventHandlers: Setting up EventSub event handlers...")
+
+	esm.client.OnWelcome(func(message eventsub.WelcomeMessage) {
+		log.Debug("Start: OnWelcome: EventSub WebSocket connected")
+
+		if err := esm.subscribeToEvents(broadcasterID, message.Payload.Session.ID); err != nil {
+			log.Errorf("Start: OnWelcome: Failed to subscribe to events: %v", err)
+		}
+	})
+
+	esm.client.OnError(func(err error) {
+		log.Errorf("Start: onError: EventSub error: %v", err)
+	})
+
+	esm.client.OnKeepAlive(func(message eventsub.KeepAliveMessage) {
+		log.Trace("Start: onKeepAlive: EventSub keepalive received")
+	})
+
+	esm.client.OnReconnect(func(message eventsub.ReconnectMessage) {
+		log.Debug("Start: onReconnect: EventSub reconnect requested")
+	})
 
 	esm.client.OnEventChannelSubscribe(esm.handleChannelSubscribe)
 	esm.client.OnEventChannelSubscriptionGift(esm.handleChannelSubscriptionGift)
