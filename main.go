@@ -156,7 +156,7 @@ func main() {
 	}()
 
 	log.Infof("Batybot started! Connected as %s in #%s", twitchConfig.User, twitchConfig.Channel)
-	dashboard := dashboardServer{db: &db}
+	dashboard := dashboardServer{db: &db, config: config}
 	if err := dashboard.Start(); err != nil {
 		log.Errorf("dashboard exited early: %s", err)
 	}

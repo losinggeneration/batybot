@@ -39,9 +39,10 @@ type Scopes struct {
 }
 
 type ServerConfig struct {
-	OAuthPort   string `koanf:"oauth_port" validate:"required"`
-	VirtualHost string `koanf:"virtual_host"`
-	DataPath    string `koanf:"data_path"`
+	OAuthPort         string `koanf:"oauth_port" validate:"required"`
+	VirtualHost       string `koanf:"virtual_host"`
+	DataPath          string `koanf:"data_path"`
+	DashboardPassword string `koanf:"dashboard_password"`
 }
 
 type BotConfig struct {
@@ -181,6 +182,7 @@ func newConfigManager(cfg string) (*ConfigManager, error) {
 			"BATYBOT_OAUTH_PORT":           "server.oauth_port",
 			"BATYBOT_VIRTUAL_HOST":         "server.virtual_host",
 			"BATYBOT_DATA_PATH":            "server.data_path",
+			"BATYBOT_DASHBOARD_PASSWORD":   "server.dashboard_password",
 			"BATYBOT_BOT_VERIFIED":         "bot.verified",
 			"BATYBOT_LOG_LEVEL":            "logging.level",
 		}[s]
